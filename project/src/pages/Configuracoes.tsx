@@ -50,6 +50,43 @@ interface ProfessionalFormState {
   isActive: boolean;
 }
 
+interface ClinicProfile {
+  clinicName?: string;
+  email?: string;
+  city?: string;
+  address?: string;
+}
+
+interface ProfessionalRecord {
+  id?: string;
+  name?: string;
+  specialty?: string;
+  role?: string;
+  email?: string;
+  phone?: string;
+  color?: string;
+  isActive?: boolean;
+  active?: boolean;
+}
+
+interface NormalizedProfessional extends ProfessionalFormState {
+  raw: ProfessionalRecord;
+}
+
+type ShowToast = {
+  (message: string, type?: string): void;
+  (payload: { message: string; type: string }): void;
+};
+
+type ConfiguracoesApp = ReturnType<typeof useApp> & {
+  clinicProfile?: ClinicProfile;
+  professionals?: ProfessionalRecord[];
+  showToast?: ShowToast;
+  updateClinicProfile?: (payload: Partial<ClinicProfile>) => void;
+  addProfessional?: (payload: Record<string, unknown>) => void;
+  updateProfessional?: (id: string, payload: Record<string, unknown>) => void;
+  deleteProfessional?: (id: string) => void;
+};
 interface SectionProps {
   theme: ThemeMode;
   t: (path: string, fallback: string) => string;
@@ -65,7 +102,7 @@ interface NotificationsSectionProps extends SectionProps {
 }
 
 interface TeamSectionProps extends SectionProps {
-  professionals: any[];
+  professionals: ProfessionalRecord[];
   onSave: (message: string) => void;
   onAddProfessional?: (payload: Record<string, unknown>) => void;
   onUpdateProfessional?: (id: string, payload: Record<string, unknown>) => void;
@@ -237,7 +274,7 @@ function SectionHeader({
 }
 
 function ClinicSection({ theme, t, styles, onSave }: ClinicSectionProps) {
-  const { clinicProfile, updateClinicProfile } = useApp() as any;
+  const { clinicProfile, updateClinicProfile } = useApp() as ConfiguracoesApp;
   const [form, setForm] = useState({
     clinicName: clinicProfile?.clinicName ?? 'Clinic Organizer Pro',
     responsibleName: 'Dra. Ana Paula',
@@ -457,7 +494,7 @@ function TeamSection({
   onDeleteProfessional,
 }: TeamSectionProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [professionalToDelete, setProfessionalToDelete] = useState<any | null>(null);
+  const [professionalToDelete, setProfessionalToDelete] = useState<NormalizedProfessional | null>(null);
   const [form, setForm] = useState<ProfessionalFormState>({
     name: '',
     specialty: '',
@@ -467,16 +504,16 @@ function TeamSection({
     isActive: true,
   });
 
-  const normalizedProfessionals = useMemo(
+  const normalizedProfessionals = useMemo<NormalizedProfessional[]>(
     () =>
       (professionals ?? []).map((professional, index) => ({
-        id: professional?.id ?? String(index),
-        name: professional?.name ?? '',
-        specialty: professional?.specialty ?? professional?.role ?? '',
-        email: professional?.email ?? '',
-        phone: professional?.phone ?? '',
-        color: professional?.color ?? '#06b6d4',
-        isActive: professional?.isActive ?? professional?.active ?? true,
+        id: professional.id ?? String(index),
+        name: professional.name ?? '',
+        specialty: professional.specialty ?? professional.role ?? '',
+        email: professional.email ?? '',
+        phone: professional.phone ?? '',
+        color: professional.color ?? '#06b6d4',
+        isActive: professional.isActive ?? professional.active ?? true,
         raw: professional,
       })),
     [professionals],
@@ -498,7 +535,7 @@ function TeamSection({
     setIsModalOpen(true);
   };
 
-  const openEditModal = (professional: ProfessionalFormState) => {
+  const openEditModal = (professional: NormalizedProfessional) => {
     setForm(professional);
     setIsModalOpen(true);
   };
@@ -1078,10 +1115,10 @@ function SecuritySection({ theme, t, styles, onSave, signOut }: SecuritySectionP
 }
 
 export function Configuracoes() {
-  const app = useApp() as any;
+  const app = useApp() as ConfiguracoesApp;
   const theme = (app.theme ?? 'dark') as ThemeMode;
   const t = (app.t ?? ((_: string, fallback: string) => fallback)) as (path: string, fallback: string) => string;
-  const professionals = (app.professionals ?? []) as any[];
+  const professionals = app.professionals ?? [];
   const styles = getThemeClasses(theme);
 
   const [activeSection, setActiveSection] = useState<SettingsSection>('clinic');

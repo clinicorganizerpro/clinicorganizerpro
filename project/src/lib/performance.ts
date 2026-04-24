@@ -6,7 +6,7 @@ import { Skeleton } from '../components/ui/Skeleton';
  */
 export function lazyPage<P extends object>(
   importFunc: () => Promise<{ default: ComponentType<P> }>,
-  _displayName?: string
+  displayName?: string
 ) {
   const Component = lazy(importFunc);
 
@@ -35,13 +35,19 @@ export function lazyPage<P extends object>(
     )
   );
 
-  return function LazyPageWrapper(props: P) {
+  function LazyPageWrapper(props: P) {
     return createElement(
       Suspense,
       { fallback },
-      createElement(Component as unknown as ComponentType<P>, props as any)
+      createElement(Component, props as never)
     );
-  };
+  }
+
+  if (displayName) {
+    LazyPageWrapper.displayName = displayName;
+  }
+
+  return LazyPageWrapper;
 }
 
 /**

@@ -590,7 +590,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [adminStateReady, setAdminStateReady] = useState(false);
   const integrationSettings = useMemo(
     () => getIntegrationSettings(adminData, adminSession?.email ?? user?.email),
-    [adminData, adminSession?.email, user?.email],
+    [adminData, adminSession, user?.email],
   );
   const [authReady, setAuthReady] = useState(false);
   const [theme, setTheme] = useState<'light' | 'dark'>(getStoredTheme());
@@ -629,7 +629,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return fallback ?? key;
   }, []);
 
-  const navigate = useCallback((_page: string) => {
+  const navigate = useCallback((page: string) => {
+    void page;
     // Intentionally left as a compatibility no-op for the existing shell.
   }, []);
 

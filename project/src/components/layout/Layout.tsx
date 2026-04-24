@@ -14,7 +14,9 @@ interface LayoutProps {
 
 const noop = () => {};
 
-const navigateNoop = (_page: PageId) => {};
+const navigateNoop = (page: PageId) => {
+  void page;
+};
 
 export function Layout({
   children = null,

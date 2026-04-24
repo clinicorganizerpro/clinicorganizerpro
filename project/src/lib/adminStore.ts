@@ -58,6 +58,9 @@ export type AdminIntegrationSettings = {
   aiApiKey: string;
   aiModel: string;
   aiEnabled: boolean;
+  supabaseUrl: string;
+  supabaseAnonKey: string;
+  supabaseEnabled: boolean;
   googleClientId: string;
   googleClientSecret: string;
   googleEnabled: boolean;
@@ -134,6 +137,9 @@ const createDefaultIntegrationSettings = (timestamp: string): AdminIntegrationSe
   aiApiKey: '',
   aiModel: 'gpt-4o-mini',
   aiEnabled: false,
+  supabaseUrl: '',
+  supabaseAnonKey: '',
+  supabaseEnabled: false,
   googleClientId: '',
   googleClientSecret: '',
   googleEnabled: false,

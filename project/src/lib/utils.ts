@@ -64,13 +64,13 @@ export function truncateText(text: string, maxLength: number): string {
 /**
  * Debounce function for performance optimization
  */
-export function debounce<T extends (...args: any[]) => any>(
-  func: T,
+export function debounce<Args extends unknown[]>(
+  func: (...args: Args) => void,
   delay: number
-): (...args: Parameters<T>) => void {
-  let timeoutId: NodeJS.Timeout;
+): (...args: Args) => void {
+  let timeoutId: ReturnType<typeof setTimeout>;
 
-  return (...args: Parameters<T>) => {
+  return (...args: Args) => {
     clearTimeout(timeoutId);
     timeoutId = setTimeout(() => func(...args), delay);
   };
@@ -79,24 +79,26 @@ export function debounce<T extends (...args: any[]) => any>(
 /**
  * Memoize function results based on arguments
  */
-export function memoize<T extends (...args: any[]) => any>(func: T): T {
-  const cache = new Map();
+export function memoize<Args extends unknown[], Result>(
+  func: (...args: Args) => Result
+): (...args: Args) => Result {
+  const cache = new Map<string, Result>();
 
-  return ((...args: any[]) => {
+  return (...args: Args) => {
     const key = JSON.stringify(args);
     if (cache.has(key)) {
-      return cache.get(key);
+      return cache.get(key) as Result;
     }
     const result = func(...args);
     cache.set(key, result);
     return result;
-  }) as T;
+  };
 }
 
 /**
  * Safe JSON parse with fallback
  */
-export function safeJsonParse<T = any>(json: string, fallback: T): T {
+export function safeJsonParse<T = unknown>(json: string, fallback: T): T {
   try {
     return JSON.parse(json) as T;
   } catch {
@@ -107,13 +109,19 @@ export function safeJsonParse<T = any>(json: string, fallback: T): T {
 /**
  * Get nested property value from object
  */
-export function getNestedValue(obj: any, path: string, fallback: any = undefined): any {
+export function getNestedValue(obj: unknown, path: string): unknown;
+export function getNestedValue<T>(obj: unknown, path: string, fallback: T): T;
+export function getNestedValue(obj: unknown, path: string, fallback?: unknown): unknown {
   const keys = path.split('.');
-  let current = obj;
+  let current: unknown = obj;
 
   for (const key of keys) {
-    if (current && typeof current === 'object' && key in current) {
-      current = current[key];
+    if (
+      current !== null &&
+      typeof current === 'object' &&
+      key in (current as Record<string, unknown>)
+    ) {
+      current = (current as Record<string, unknown>)[key];
     } else {
       return fallback;
     }

@@ -14,7 +14,7 @@ interface VirtualListProps<T> {
  * Optimized list component that can handle pagination and large datasets
  * Currently renders all items but can be extended with virtual scrolling
  */
-const VirtualListComponent = <T extends any>({
+const VirtualListComponent = <T,>({
   items,
   renderItem,
   keyExtractor,
@@ -58,7 +58,7 @@ interface PaginatedListProps<T> extends Omit<VirtualListProps<T>, 'maxItems'> {
   onPageChange?: (page: number) => void;
 }
 
-const PaginatedListComponent = <T extends any>({
+const PaginatedListComponent = <T,>({
   items,
   renderItem,
   keyExtractor,
