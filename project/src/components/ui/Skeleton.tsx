@@ -1,0 +1,8 @@
+
+interface SkeletonProps {
+  className?: string;
+}
+
+export function Skeleton({ className = '' }: SkeletonProps) {
+  return <div className={`skeleton rounded-xl ${className}`} aria-hidden="true" />;
+}
