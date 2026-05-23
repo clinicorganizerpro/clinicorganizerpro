@@ -9,8 +9,10 @@ import adminBillingRouter from './routes/adminBilling.js';
 import adminConfigRouter from './routes/adminConfig.js';
 import adminUsersRouter from './routes/adminUsers.js';
 import aiRouter from './routes/ai.js';
+import { readEnv, readSupabaseAnonKey, readSupabaseServiceKey, readSupabaseUrl } from './utils/supabaseEnv.js';
 
 const app = express();
+const API_VERSION = '2026-05-23-netlify-auth-diag';
 
 const readCsvEnv = (...names: string[]) =>
   names
@@ -63,9 +65,46 @@ app.get('/health', (_req, res) => {
   res.json({
     ok: true,
     service: 'clinic-organizer-api',
+    version: API_VERSION,
     env: process.env.NODE_ENV ?? 'development',
+    commit: process.env.COMMIT_REF ?? process.env.HEAD ?? null,
     uptime: Math.round(process.uptime()),
     timestamp: new Date().toISOString(),
+  });
+});
+
+app.get('/api/_diag', (_req, res) => {
+  const supabaseUrl = readSupabaseUrl();
+  let supabaseHost = '';
+  let supabasePath = '';
+
+  try {
+    const parsed = new URL(supabaseUrl);
+    supabaseHost = parsed.host;
+    supabasePath = parsed.pathname;
+  } catch {
+    supabasePath = supabaseUrl ? 'invalid-url' : '';
+  }
+
+  res.json({
+    data: {
+      ok: true,
+      version: API_VERSION,
+      netlify: Boolean(process.env.NETLIFY),
+      commit: process.env.COMMIT_REF ?? process.env.HEAD ?? null,
+      supabase: {
+        hasUrl: Boolean(supabaseUrl),
+        host: supabaseHost,
+        path: supabasePath,
+        hasAnonKey: Boolean(readSupabaseAnonKey()),
+        hasServiceKey: Boolean(readSupabaseServiceKey()),
+      },
+      admin: {
+        hasLoginEmail: Boolean(readEnv('ADMIN_LOGIN_EMAIL')),
+        hasLoginPassword: Boolean(readEnv('ADMIN_LOGIN_PASSWORD', 'ADMIN_PASSWORD')),
+      },
+    },
+    error: null,
   });
 });
 
