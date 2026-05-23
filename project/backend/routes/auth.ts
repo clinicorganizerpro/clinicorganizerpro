@@ -279,6 +279,7 @@ const loadClinicProfile = async (clinicId?: string): Promise<ClinicAuthProfile |
 
 
 authRouter.post('/login', async (req, res) => {
+  try {
   const body = req.body as LoginBody;
 
   const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
@@ -408,6 +409,30 @@ authRouter.post('/login', async (req, res) => {
   });
 
   return res.json({ data: { accessToken, refreshToken }, error: null });
+  } catch (error) {
+    console.error('[auth] Login failed with an unhandled error', error);
+
+    const body = req.body as LoginBody;
+    const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
+    const password = typeof body?.password === 'string' ? body.password : '';
+    const adminLoginEmail = getAdminLoginEmail().trim().toLowerCase();
+    const envAdminPassword = email === adminLoginEmail ? getAdminLoginPassword() : '';
+
+    if (email === adminLoginEmail && envAdminPassword && password === envAdminPassword) {
+      const accessJti = `${Date.now()}_access`;
+      const refreshTokenJti = `${Date.now()}_refresh_${Math.random().toString(36).slice(2)}`;
+      const fallbackAdminId = `admin_${Buffer.from(adminLoginEmail).toString('base64url')}`;
+      const accessToken = signAccessToken({ sub: fallbackAdminId, email: adminLoginEmail, role: 'admin' }, accessJti);
+      const refreshToken = signRefreshToken({ sub: fallbackAdminId, jti: refreshTokenJti });
+
+      return res.json({ data: { accessToken, refreshToken }, error: null });
+    }
+
+    return res.status(500).json({
+      data: null,
+      error: { message: 'Falha interna na API. Verifique as variáveis do Supabase/Auth no Netlify.' },
+    });
+  }
 });
 
 const handleSignup = async (req: Request, res: Response) => {
