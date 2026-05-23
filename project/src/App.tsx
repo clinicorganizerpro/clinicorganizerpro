@@ -1,6 +1,7 @@
 import { Loader2 } from 'lucide-react';
 import { Layout } from './components/layout/Layout';
-import { AppProvider, useApp } from './context/AppContext';
+import { AppProvider } from './context/AppContext';
+import { useApp } from './context/useApp';
 import { LayoutProvider, useLayout } from './context/LayoutContext';
 import type { PageId } from './hooks/useNavigation';
 import { Agenda } from './pages/Agenda';
@@ -10,13 +11,32 @@ import { Dashboard } from './pages/Dashboard';
 import { Financeiro } from './pages/Financeiro';
 import { Marketing } from './pages/Marketing';
 import { Pacientes } from './pages/Pacientes';
+import { Planos } from './pages/Planos';
 import { WhatsApp } from './pages/WhatsApp';
+import { Chatbot } from './pages/Chatbot';
 import AuthPage from './pages/AuthPage';
+import { FloatingChatbot } from './components/chat/FloatingChatbot';
 
 type AppState = {
   session: unknown;
+  user?: unknown | null;
   adminSession: { email: string; role: 'admin' } | null;
   authReady: boolean;
+  signIn: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
+  signUp: (input: {
+    name: string;
+    email: string;
+    password: string;
+    clinicId?: string;
+    clinicName: string;
+    phone: string;
+    cnpj: string;
+    cep: string;
+    address: string;
+    addressNumber: string;
+    city: string;
+    state: string;
+  }) => Promise<{ ok: boolean; error?: string; needsConfirmation?: boolean }>;
 };
 
 function renderPage(currentPage: PageId) {
@@ -27,19 +47,23 @@ function renderPage(currentPage: PageId) {
       return <Pacientes />;
     case 'financeiro':
       return <Financeiro />;
+    case 'planos':
+      return <Planos />;
     case 'whatsapp':
       return <WhatsApp />;
     case 'marketing':
       return <Marketing />;
     case 'configuracoes':
       return <Configuracoes />;
+    case 'chatbot':
+      return <Chatbot />;
     default:
       return <Dashboard />;
   }
 }
 
 function AppShell() {
-  const { session, adminSession, authReady } = useApp() as AppState;
+  const { session, user, adminSession, authReady, signIn, signUp } = useApp() as AppState;
   const layout = useLayout();
 
   if (!authReady) {
@@ -57,8 +81,16 @@ function AppShell() {
     return <AdminPanel />;
   }
 
-  if (!session) {
-    return <AuthPage />;
+  // Fluxo do login "local JWT" do backend: `user` pode existir enquanto `session` fica null.
+  const isAuthenticated = Boolean(user);
+
+  if (!session && !isAuthenticated) {
+    return (
+      <AuthPage
+        signIn={signIn}
+        signUp={signUp}
+      />
+    );
   }
 
   return (
@@ -68,9 +100,11 @@ function AppShell() {
       sidebarOpen={layout.sidebarOpen}
       desktopSidebarCollapsed={layout.desktopSidebarCollapsed}
       onToggleDesktopSidebar={layout.toggleDesktopSidebar}
+      onOpenSidebar={() => layout.setSidebarOpen(true)}
       onCloseSidebar={() => layout.setSidebarOpen(false)}
     >
       {renderPage(layout.currentPage)}
+      <FloatingChatbot />
     </Layout>
   );
 }

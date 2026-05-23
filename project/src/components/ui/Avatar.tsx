@@ -1,5 +1,6 @@
 
-import { memo } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 interface AvatarProps {
   name: string;
@@ -14,6 +15,8 @@ const sizeClasses = {
   lg: 'w-12 h-12 text-base',
   xl: 'w-16 h-16 text-xl',
 };
+
+const previewSize = 148;
 
 function getInitials(name: string): string {
   return name
@@ -38,13 +41,83 @@ function getGradient(name: string): string {
 }
 
 const AvatarComponent = ({ name, src, size = 'md', className = '' }: AvatarProps) => {
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const [previewPosition, setPreviewPosition] = useState<{ left: number; top: number } | null>(null);
+
+  useEffect(() => {
+    if (!previewPosition) return;
+
+    const close = () => setPreviewPosition(null);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close();
+    };
+
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [previewPosition]);
+
+  const togglePreview = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (previewPosition) {
+      setPreviewPosition(null);
+      return;
+    }
+
+    const rect = buttonRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const margin = 12;
+    const left = Math.min(
+      Math.max(margin, rect.left + rect.width / 2 - previewSize / 2),
+      window.innerWidth - previewSize - margin,
+    );
+    const preferredTop = rect.bottom + 10;
+    const top = preferredTop + previewSize + margin > window.innerHeight
+      ? Math.max(margin, rect.top - previewSize - 10)
+      : preferredTop;
+
+    setPreviewPosition({ left, top });
+  };
+
   if (src) {
     return (
-      <img
-        src={src}
-        alt={name}
-        className={`${sizeClasses[size]} rounded-full object-cover flex-shrink-0 ring-1 ring-white/10 ${className}`}
-      />
+      <>
+        <button
+          ref={buttonRef}
+          type="button"
+          onClick={togglePreview}
+          className={`${sizeClasses[size]} rounded-full flex-shrink-0 overflow-hidden ring-1 ring-white/10 transition-transform hover:scale-105 focus:outline-none focus:ring-2 focus:ring-teal-400/60 ${className}`}
+          aria-label={`Ampliar foto de ${name}`}
+          title="Ampliar foto"
+        >
+          <img src={src} alt={name} className="h-full w-full object-cover" />
+        </button>
+        {previewPosition && createPortal(
+          <button
+            type="button"
+            className="fixed z-[1000] overflow-hidden rounded-2xl border border-white/15 bg-zinc-950/95 p-1 shadow-2xl shadow-black/50 backdrop-blur-md"
+            style={{ left: previewPosition.left, top: previewPosition.top, width: previewSize, height: previewSize }}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setPreviewPosition(null);
+            }}
+            aria-label="Fechar foto ampliada"
+          >
+            <img src={src} alt={name} className="avatar-preview-zoom h-full w-full rounded-xl object-cover" />
+          </button>,
+          document.body,
+        )}
+      </>
     );
   }
 

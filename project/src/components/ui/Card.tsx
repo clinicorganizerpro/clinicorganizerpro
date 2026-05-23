@@ -14,7 +14,7 @@ const CardComponent = ({ children, className = '', onClick, hover = false, glow 
     <div
       onClick={onClick}
       className={`
-        card-premium gradient-vivid-elegant layer-surface layer-elevated rounded-2xl p-5 md:p-6
+        card-premium gradient-vivid-elegant layer-surface layer-elevated rounded-xl p-4 sm:rounded-2xl sm:p-5 md:p-6
         ${hover ? 'card-hover cursor-pointer' : ''}
         ${glow ? 'glow-teal-sm' : ''}
         ${accent ? '!border-teal-500/20' : ''}

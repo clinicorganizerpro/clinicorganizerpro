@@ -16,6 +16,8 @@ import {
   LogOut,
 } from 'lucide-react';
 import { useApp } from '../context/useApp';
+import { BackButton } from '../components/layout/BackButton';
+import { useSubscription } from '../hooks/useSubscription';
 
 type SettingsSection = 'clinic' | 'notifications' | 'team' | 'billing' | 'security';
 
@@ -52,8 +54,11 @@ interface ProfessionalFormState {
 
 interface ClinicProfile {
   clinicName?: string;
+  responsibleName?: string;
   email?: string;
   city?: string;
+  phone?: string;
+  cnpj?: string;
   address?: string;
 }
 
@@ -82,7 +87,11 @@ type ConfiguracoesApp = ReturnType<typeof useApp> & {
   clinicProfile?: ClinicProfile;
   professionals?: ProfessionalRecord[];
   showToast?: ShowToast;
+ 
   updateClinicProfile?: (payload: Partial<ClinicProfile>) => void;
+  currentClinic?: { id: string; planId: string } | null;
+  currentPlan?: { id: string; name: string; monthlyPrice: number } | null;
+  authAccessToken?: string | null;
   addProfessional?: (payload: Record<string, unknown>) => void;
   updateProfessional?: (id: string, payload: Record<string, unknown>) => void;
   deleteProfessional?: (id: string) => void;
@@ -116,6 +125,7 @@ interface BillingSectionProps extends SectionProps {
 interface SecuritySectionProps extends SectionProps {
   onSave: (message: string) => void;
   signOut?: () => Promise<void>;
+  changePassword: (currentPassword: string, newPassword: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
 function getThemeClasses(theme: ThemeMode): ThemeClasses {
@@ -276,13 +286,13 @@ function SectionHeader({
 function ClinicSection({ theme, t, styles, onSave }: ClinicSectionProps) {
   const { clinicProfile, updateClinicProfile } = useApp() as ConfiguracoesApp;
   const [form, setForm] = useState({
-    clinicName: clinicProfile?.clinicName ?? 'Clinic Organizer Pro',
-    responsibleName: 'Dra. Ana Paula',
-    email: clinicProfile?.email ?? 'contato@clinicorganizerpro.com',
-    city: clinicProfile?.city ?? 'São Paulo',
-    phone: '(11) 99999-9999',
-    cnpj: '00.000.000/0001-00',
-    address: clinicProfile?.address ?? 'Av. Paulista, 1000 - São Paulo, SP',
+    clinicName: clinicProfile?.clinicName ?? '',
+    responsibleName: clinicProfile?.responsibleName ?? '',
+    email: clinicProfile?.email ?? '',
+    city: clinicProfile?.city ?? '',
+    phone: clinicProfile?.phone ?? '',
+    cnpj: clinicProfile?.cnpj ?? '',
+    address: clinicProfile?.address ?? '',
   });
 
   const isDark = theme === 'dark';
@@ -291,11 +301,22 @@ function ClinicSection({ theme, t, styles, onSave }: ClinicSectionProps) {
     setForm((current) => ({
       ...current,
       clinicName: clinicProfile?.clinicName ?? current.clinicName,
+      responsibleName: clinicProfile?.responsibleName ?? current.responsibleName,
       email: clinicProfile?.email ?? current.email,
       city: clinicProfile?.city ?? current.city,
+      phone: clinicProfile?.phone ?? current.phone,
+      cnpj: clinicProfile?.cnpj ?? current.cnpj,
       address: clinicProfile?.address ?? current.address,
     }));
-  }, [clinicProfile?.clinicName, clinicProfile?.email, clinicProfile?.city, clinicProfile?.address]);
+  }, [
+    clinicProfile?.clinicName,
+    clinicProfile?.responsibleName,
+    clinicProfile?.email,
+    clinicProfile?.city,
+    clinicProfile?.phone,
+    clinicProfile?.cnpj,
+    clinicProfile?.address,
+  ]);
 
   return (
     <div className={`rounded-3xl p-6 md:p-8 ${styles.panel}`}>
@@ -369,8 +390,11 @@ function ClinicSection({ theme, t, styles, onSave }: ClinicSectionProps) {
           onClick={() => {
             updateClinicProfile?.({
               clinicName: form.clinicName,
+              responsibleName: form.responsibleName,
               email: form.email,
               city: form.city,
+              phone: form.phone,
+              cnpj: form.cnpj,
               address: form.address,
             });
             onSave(t('settings.toasts.clinicSaved', 'Dados da clínica salvos com sucesso!'));
@@ -843,16 +867,96 @@ function TeamSection({
 }
 
 function BillingSection({ theme, t, styles, onSave }: BillingSectionProps) {
+  const app = useApp();
+  const {
+    subscription,
+    loading: subscriptionLoading,
+    error: subscriptionError,
+    startCheckout,
+    openBillingPortal,
+  } = useSubscription();
   const [billing, setBilling] = useState({
-    plan: 'Professional',
+    plan: '',
     cycle: 'monthly',
-    paymentMethod: 'Cartão •••• 4242',
-    nextCharge: '15/10/2026',
-    autoRenew: true,
-    invoiceEmail: 'financeiro@clinicorganizerpro.com',
+    paymentMethod: '',
+    nextCharge: '',
+    autoRenew: false,
+    invoiceEmail: '',
   });
 
+  const [selectedPlanId, setSelectedPlanId] = useState<string>('');
+  const [isCheckoutLoading, setIsCheckoutLoading] = useState(false);
+  const [isPortalLoading, setIsPortalLoading] = useState(false);
+  const [billingError, setBillingError] = useState<string | null>(null);
   const isDark = theme === 'dark';
+
+  const adminData = (app as unknown as { adminData?: { plans?: Array<{ id: string; name: string; active: boolean; monthlyPrice: number }> } })
+    .adminData;
+
+  const plans = adminData?.plans ?? [];
+  const planOptions = plans.filter((p) => p.active).map((p) => ({ value: p.id, label: `${p.name} — R$ ${p.monthlyPrice.toFixed(2).replace('.', ',')}` }));
+
+  const currentClinic = (app as ConfiguracoesApp).currentClinic ?? null;
+  const currentPlanFromAdmin = (app as ConfiguracoesApp).currentPlan ?? null;
+  const clinicId = currentClinic?.id ?? (app as unknown as { user?: { id?: string } }).user?.id ?? '';
+
+  useEffect(() => {
+    const currentPlanId = currentClinic?.planId ?? '';
+    const currentPlan = currentPlanFromAdmin ?? plans.find((p) => p.id === currentPlanId);
+    setSelectedPlanId(currentPlanId);
+
+    setBilling((current) => ({
+      ...current,
+      plan: currentPlan?.name ?? '',
+      paymentMethod: current.paymentMethod || 'Stripe',
+      nextCharge: current.nextCharge || '—',
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentClinic?.planId, currentPlanFromAdmin?.id, currentPlanFromAdmin?.monthlyPrice, plans.length]);
+
+  const handleCheckout = async () => {
+    if (!selectedPlanId) return;
+    if (!clinicId) return;
+
+    setIsCheckoutLoading(true);
+    setBillingError(null);
+    try {
+      await startCheckout(selectedPlanId);
+    } catch (e) {
+      console.error(e);
+      setBillingError(e instanceof Error ? e.message : 'Falha ao iniciar checkout do Stripe.');
+    } finally {
+      setIsCheckoutLoading(false);
+    }
+  };
+
+  const handlePortal = async () => {
+    setIsPortalLoading(true);
+    setBillingError(null);
+
+    try {
+      await openBillingPortal();
+    } catch (e) {
+      console.error(e);
+      setBillingError(e instanceof Error ? e.message : 'Falha ao abrir portal de cobrança.');
+    } finally {
+      setIsPortalLoading(false);
+    }
+  };
+
+  const formatDate = (value?: string | null) => {
+    if (!value) return '—';
+
+    return new Intl.DateTimeFormat('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    }).format(new Date(value));
+  };
+
+  const statusLabel = subscription?.subscriptionStatus
+    ? subscription.subscriptionStatus.replace(/_/g, ' ')
+    : t('settings.billing.localPlan', 'Plano local');
 
   return (
     <div className={`rounded-3xl p-6 md:p-8 ${styles.panel}`}>
@@ -883,20 +987,56 @@ function BillingSection({ theme, t, styles, onSave }: BillingSectionProps) {
               <p className={`text-xs uppercase tracking-wide ${styles.textMuted}`}>
                 {t('settings.billing.nextCharge', 'Próxima cobrança')}
               </p>
-              <p className={`mt-2 text-lg font-semibold ${styles.text}`}>{billing.nextCharge}</p>
+              <p className={`mt-2 text-lg font-semibold ${styles.text}`}>
+                {formatDate(subscription?.currentPeriodEnd) || billing.nextCharge}
+              </p>
             </div>
             <div className={`rounded-2xl p-4 ${styles.panel}`}>
               <p className={`text-xs uppercase tracking-wide ${styles.textMuted}`}>
-                {t('settings.billing.paymentMethod', 'Método de pagamento')}
+                {t('settings.billing.subscriptionStatus', 'Status da assinatura')}
               </p>
-              <p className={`mt-2 text-lg font-semibold ${styles.text}`}>{billing.paymentMethod}</p>
+              <p className={`mt-2 text-lg font-semibold capitalize ${styles.text}`}>{statusLabel}</p>
             </div>
+          </div>
+
+          {subscriptionError || billingError ? (
+            <div className="mt-5 rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-300">
+              {billingError || subscriptionError}
+            </div>
+          ) : null}
+
+          <div className="mt-6 space-y-3">
+            <h3 className={`text-sm font-semibold ${styles.text}`}>{t('settings.billing.changePlan', 'Trocar plano')}</h3>
+            <SelectField
+              label={t('settings.billing.selectPlan', 'Plano')}
+              value={selectedPlanId}
+              onChange={(value) => setSelectedPlanId(value)}
+              options={planOptions.length ? planOptions : [{ value: '', label: 'Sem planos ativos' }]}
+              styles={styles}
+            />
+
+            <button
+              type="button"
+              disabled={!selectedPlanId || isCheckoutLoading || subscriptionLoading || !clinicId || planOptions.length === 0}
+              onClick={() => void handleCheckout()}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-teal-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {isCheckoutLoading ? 'Abrindo checkout…' : 'Contratar/Atualizar no Stripe'}
+            </button>
+            <button
+              type="button"
+              disabled={isPortalLoading || !subscription?.stripeCustomerId}
+              onClick={() => void handlePortal()}
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-zinc-200 transition hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {isPortalLoading ? 'Abrindo portal…' : 'Gerenciar assinatura'}
+            </button>
           </div>
         </div>
 
         <div className={`rounded-3xl p-6 ${styles.panelSoft}`}>
           <h3 className={`text-lg font-semibold ${styles.text}`}>
-            {t('settings.billing.billingData', 'Dados de cobrança')}
+            {t('settings.billing.billingData', 'Dashboard de cobrança')}
           </h3>
           <div className="mt-4 space-y-4">
             <SelectField
@@ -925,6 +1065,34 @@ function BillingSection({ theme, t, styles, onSave }: BillingSectionProps) {
               onChange={(value) => setBilling((current) => ({ ...current, autoRenew: value }))}
               styles={styles}
             />
+
+            <div className={`rounded-2xl p-4 ${styles.panel}`}>
+              <p className={`text-xs uppercase tracking-wide ${styles.textMuted}`}>Stripe</p>
+              <div className="mt-3 space-y-3 text-sm">
+                <div className="flex items-center justify-between gap-3">
+                  <span className={styles.textMuted}>Cliente</span>
+                  <span className={`truncate text-right font-medium ${styles.text}`}>
+                    {subscription?.stripeCustomerId ?? '—'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className={styles.textMuted}>Assinatura</span>
+                  <span className={`truncate text-right font-medium ${styles.text}`}>
+                    {subscription?.stripeSubscriptionId ?? '—'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className={styles.textMuted}>Período atual</span>
+                  <span className={`text-right font-medium ${styles.text}`}>
+                    {formatDate(subscription?.currentPeriodStart)} até {formatDate(subscription?.currentPeriodEnd)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <span className={styles.textMuted}>Trial</span>
+                  <span className={`text-right font-medium ${styles.text}`}>{formatDate(subscription?.trialEndsAt)}</span>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -943,7 +1111,7 @@ function BillingSection({ theme, t, styles, onSave }: BillingSectionProps) {
   );
 }
 
-function SecuritySection({ theme, t, styles, onSave, signOut }: SecuritySectionProps) {
+function SecuritySection({ theme, t, styles, onSave, signOut, changePassword }: SecuritySectionProps) {
   const [settings, setSettings] = useState({
     twoFactor: false,
     loginAlerts: true,
@@ -1103,7 +1271,35 @@ function SecuritySection({ theme, t, styles, onSave, signOut }: SecuritySectionP
         </button>
         <button
           type="button"
-          onClick={() => onSave(t('settings.toasts.securitySaved', 'Configurações de segurança atualizadas!'))}
+          onClick={async () => {
+            const currentPassword = settings.currentPassword.trim();
+            const newPassword = settings.newPassword.trim();
+            const confirmPassword = settings.confirmPassword.trim();
+
+            if (!currentPassword) {
+              onSave('Informe a senha atual.');
+              return;
+            }
+
+            if (!newPassword) {
+              onSave('Informe a nova senha.');
+              return;
+            }
+
+            if (newPassword !== confirmPassword) {
+              onSave('A confirmação da nova senha não confere.');
+              return;
+            }
+
+            const res = await changePassword(currentPassword, newPassword);
+            if (!res.ok) {
+              onSave(res.error ?? 'Falha ao alterar a senha.');
+              return;
+            }
+
+            // Mantém o padrão pedido: sempre que salvar, avisar "Dados salvos" por 2s
+            onSave(t('settings.toasts.securitySaved', 'Configurações de segurança atualizadas!'));
+          }}
           className="inline-flex items-center gap-2 rounded-xl bg-cyan-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-cyan-600"
         >
           <CheckCircle2 className="h-4 w-4" />
@@ -1121,9 +1317,28 @@ export function Configuracoes() {
   const professionals = app.professionals ?? [];
   const styles = getThemeClasses(theme);
 
+  
+
   const [activeSection, setActiveSection] = useState<SettingsSection>('clinic');
 
+  const [inlineSavedToast, setInlineSavedToast] = useState<{ message: string; visible: boolean }>(() => ({
+    message: '',
+    visible: false,
+  }));
+
+  useEffect(() => {
+    if (!inlineSavedToast.visible) return;
+
+    const timerId = window.setTimeout(() => {
+      setInlineSavedToast({ message: '', visible: false });
+    }, 2000);
+
+    return () => window.clearTimeout(timerId);
+  }, [inlineSavedToast.visible]);
+
   const handleToast = (message: string) => {
+    setInlineSavedToast({ message, visible: true });
+
     try {
       app.showToast?.(message, 'success');
     } catch {
@@ -1170,13 +1385,37 @@ export function Configuracoes() {
 
   return (
     <div className={`min-h-full p-4 md:p-6 ${styles.page}`}>
+      {inlineSavedToast.visible ? (
+        <div
+          className="fixed z-[110] top-16 left-1/2 -translate-x-1/2 pointer-events-none"
+          style={{
+            background: 'rgba(255,255,255,0.08)',
+            border: '1px solid rgba(255,255,255,0.16)',
+            backdropFilter: 'blur(14px)',
+            boxShadow: '0 12px 40px rgba(0,0,0,0.35)',
+            borderRadius: 16,
+            padding: '10px 14px',
+            maxWidth: 420,
+          }}
+          role="status"
+          aria-live="polite"
+        >
+          <p className="text-[13px] font-semibold text-zinc-100 leading-snug">
+            {inlineSavedToast.message || 'Dados salvos com sucesso!'}
+          </p>
+        </div>
+      ) : null}
+
       <div className="mx-auto max-w-7xl">
         <div className="mb-6 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
           <div>
             <span className={styles.badge}>{t('settings.badge', 'Administração do sistema')}</span>
-            <h1 className={`mt-3 text-3xl font-bold ${styles.text}`}>
-              {t('settings.title', 'Configurações')}
-            </h1>
+            <div className="flex items-center gap-3 mt-3">
+              <h1 className={`text-3xl font-bold ${styles.text}`}>
+                {t('settings.title', 'Configurações')}
+              </h1>
+              <BackButton to="dashboard" />
+            </div>
             <p className={`mt-2 text-sm ${styles.textMuted}`}>
               {t(
                 'settings.subtitle',
@@ -1251,7 +1490,14 @@ export function Configuracoes() {
               <BillingSection theme={theme} t={t} styles={styles} onSave={handleToast} />
             ) : null}
             {activeSection === 'security' ? (
-              <SecuritySection theme={theme} t={t} styles={styles} onSave={handleToast} signOut={app.signOut} />
+              <SecuritySection
+                theme={theme}
+                t={t}
+                styles={styles}
+                onSave={handleToast}
+                signOut={app.signOut}
+                changePassword={app.changePassword}
+              />
             ) : null}
           </section>
         </div>

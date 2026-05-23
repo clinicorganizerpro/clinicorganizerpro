@@ -123,6 +123,25 @@
 }
 
 @layer utilities {
+  @keyframes avatar-preview-zoom {
+    0% {
+      transform: scale(1) translate3d(-2%, -1%, 0);
+    }
+
+    50% {
+      transform: scale(1.13) translate3d(2%, 1.5%, 0);
+    }
+
+    100% {
+      transform: scale(1.06) translate3d(0, -2%, 0);
+    }
+  }
+
+  .avatar-preview-zoom {
+    animation: avatar-preview-zoom 2.8s ease-in-out infinite alternate;
+    transform-origin: center;
+  }
+
   .glass {
     background: rgba(13, 14, 18, 0.8);
     backdrop-filter: blur(20px) saturate(1.5);
@@ -186,7 +205,9 @@
   .app-background-logo__image {
     width: min(92vw, 1200px);
     max-width: 1200px;
-    min-width: 780px;
+    min-width: 0;
+    /* impede quebra em celulares/tablets: ajusta conforme a tela */
+    aspect-ratio: 1200 / 600;
     opacity: 0.06;
     filter: saturate(0.95) blur(0.2px);
     transform: translate3d(0, 0, 0) scale(1.08);
@@ -373,6 +394,13 @@
     transform: scale(1.01);
   }
 
+  @media (hover: none) and (pointer: coarse) {
+    .row-interactive:hover,
+    .card-hover:hover {
+      transform: none;
+    }
+  }
+
   .skeleton {
     position: relative;
     overflow: hidden;
@@ -406,6 +434,9 @@
     .scale-in,
     .float-subtle,
     .pulse-dot,
+    .card-premium,
+    .card-hover,
+    .row-interactive,
     .app-background-logo__image,
     .skeleton::after {
       animation: none !important;

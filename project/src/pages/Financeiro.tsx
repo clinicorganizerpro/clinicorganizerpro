@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   Plus,
   ArrowUpRight,
@@ -15,12 +15,84 @@ import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { Modal } from '../components/ui/Modal';
-import { mockTransactions } from '../data/mockData';
-import type { Transaction } from '../types';
+import { useApp } from '../context/useApp';
+import type { Expense, Income, Transaction } from '../types';
+import { BackButton } from '../components/layout/BackButton';
 
 function fmt(value: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 }
+
+type FinancialTransaction = Transaction & {
+  sourceType: 'income' | 'expense';
+  sourceId: string;
+};
+
+const incomePaymentMethodMap: Record<string, 'pix' | 'cartao' | 'dinheiro' | 'stripe'> = {
+  PIX: 'pix',
+  Dinheiro: 'dinheiro',
+  'Cartão Crédito': 'cartao',
+  'Cartão Débito': 'cartao',
+  Transferência: 'stripe',
+  Outro: 'pix',
+};
+
+const expensePaymentMethodMap: Record<string, 'pix' | 'cartao' | 'dinheiro' | 'transferencia' | 'outro'> = {
+  PIX: 'pix',
+  Dinheiro: 'dinheiro',
+  'Cartão Crédito': 'cartao',
+  'Cartão Débito': 'cartao',
+  Transferência: 'transferencia',
+  Outro: 'outro',
+};
+
+const uiCategoryToExpenseCategory = (category: string): Expense['category'] => {
+  return category === 'Infraestrutura' || category === 'Tecnologia' ? 'fixa' : 'variavel';
+};
+
+const expenseCategoryToUiCategory = (category: Expense['category']): string => {
+  return category === 'fixa' ? 'Infraestrutura' : 'Insumos';
+};
+
+const toDayString = (value?: string) => {
+  if (!value) {
+    return new Date().toISOString().slice(0, 10);
+  }
+
+  return value.slice(0, 10);
+};
+
+const incomeToTransaction = (income: Income): FinancialTransaction => {
+  return {
+    id: `income:${income.id}`,
+    sourceType: 'income',
+    sourceId: income.id,
+    description: income.service || income.patientName || 'Entrada',
+    category: 'Procedimento',
+    type: 'income',
+    amount: income.amount,
+    date: toDayString(income.attendanceDate || income.createdAt),
+    status: income.status === 'paid' ? 'paid' : 'pending',
+    patient: income.patientName || undefined,
+    procedure: income.service || undefined,
+  };
+};
+
+const expenseToTransaction = (expense: Expense): FinancialTransaction => {
+  return {
+    id: `expense:${expense.id}`,
+    sourceType: 'expense',
+    sourceId: expense.id,
+    description: expense.description,
+    category: expenseCategoryToUiCategory(expense.category),
+    type: 'expense',
+    amount: expense.amount,
+    date: toDayString(expense.date || expense.createdAt),
+    status: expense.status === 'paid' ? 'paid' : 'pending',
+    patient: undefined,
+    procedure: undefined,
+  };
+};
 
 const statusMap: Record<string, { label: string; variant: 'success' | 'warning' | 'error' | 'neutral' | 'info' | 'teal' }> = {
   paid: { label: 'Pago', variant: 'success' },
@@ -53,15 +125,46 @@ function buildMonthlyData(items: Transaction[]) {
 
 const categories = ['Procedimento', 'Insumos', 'Infraestrutura', 'Tecnologia', 'Marketing', 'Outro'];
 const paymentMethods = ['Dinheiro', 'Cartão Crédito', 'Cartão Débito', 'PIX', 'Transferência', 'Outro'];
+const procedures = ['Botox', 'Acupuntura', 'Massagem', 'Consulta', 'Preenchimento', 'Peeling', 'Limpeza de Pele', 'Microagulhamento', 'Bioestimulador', 'Outro'];
 
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, '&')
-    .replace(/</g, '<')
-    .replace(/>/g, '>')
-    .replace(/"/g, '"')
-    .replace(/'/g, '&#39;');
-}
+type TransactionFormData = {
+  description: string;
+  category: string;
+  type: 'income' | 'expense';
+  amount: string;
+  payment_method: string;
+  patientId: string;
+  patient_name: string;
+  procedure: string;
+  notes: string;
+};
+
+const incomePaymentMethodLabels: Record<Income['paymentMethod'], string> = {
+  pix: 'PIX',
+  cartao: 'Cartão Crédito',
+  dinheiro: 'Dinheiro',
+  stripe: 'Transferência',
+};
+
+const expensePaymentMethodLabels: Record<Expense['paymentMethod'], string> = {
+  pix: 'PIX',
+  cartao: 'Cartão Crédito',
+  dinheiro: 'Dinheiro',
+  transferencia: 'Transferência',
+  outro: 'Outro',
+};
+
+const createEmptyTransactionForm = (): TransactionFormData => ({
+  description: '',
+  category: 'Procedimento',
+  type: 'income',
+  amount: '',
+  payment_method: 'PIX',
+  patientId: '',
+  patient_name: '',
+  procedure: 'Botox',
+  notes: '',
+});
 
 function formatExportDate(date: string) {
   return new Date(`${date}T00:00:00`).toLocaleDateString('pt-BR');
@@ -79,67 +182,126 @@ function downloadFile(filename: string, content: string, mimeType: string) {
   URL.revokeObjectURL(url);
 }
 
-function buildExportDocument(title: string, summary: { income: number; expense: number; netProfit: number; pending: number }, rows: Transaction[]) {
-  const rowsHtml = rows
-    .map(
-      (transaction) => `
-        <tr>
-          <td>${escapeHtml(transaction.description)}</td>
-          <td>${escapeHtml(transaction.category)}</td>
-          <td>${escapeHtml(formatExportDate(transaction.date))}</td>
-          <td>${escapeHtml(transaction.type === 'income' ? '+' : '-')}${fmt(transaction.amount)}</td>
-          <td>${escapeHtml(statusMap[transaction.status].label)}</td>
-          <td>${escapeHtml(transaction.patient || '-')}</td>
-        </tr>`,
-    )
-    .join('');
+function printPdfDocument(html: string) {
+  const printWindow = window.open('', '_blank', 'width=1000,height=800');
+  if (!printWindow) {
+    alert('Não foi possível abrir a janela de impressão. Verifique se o bloqueador de pop-ups está ativo.');
+    return;
+  }
 
-  return `
-    <!DOCTYPE html>
-    <html lang="pt-BR">
-      <head>
-        <meta charset="UTF-8" />
-        <title>${escapeHtml(title)}</title>
-        <style>
-          body { font-family: Arial, Helvetica, sans-serif; color: #111827; padding: 24px; }
-          h1 { margin: 0 0 8px; font-size: 24px; }
-          .subtitle { margin: 0 0 20px; color: #6b7280; }
-          .summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
-          .summary-item { border: 1px solid #d1d5db; border-radius: 12px; padding: 12px; background: #f9fafb; }
-          .summary-item span { display: block; font-size: 12px; color: #6b7280; margin-bottom: 6px; }
-          .summary-item strong { font-size: 18px; color: #111827; }
-          table { width: 100%; border-collapse: collapse; }
-          th, td { border: 1px solid #d1d5db; padding: 10px; text-align: left; font-size: 12px; }
-          th { background: #f3f4f6; }
-        </style>
-      </head>
-      <body>
-        <h1>${escapeHtml(title)}</h1>
-        <p class="subtitle">Exportado em ${escapeHtml(new Date().toLocaleString('pt-BR'))}</p>
-        <div class="summary">
-          <div class="summary-item"><span>Receitas</span><strong>${escapeHtml(fmt(summary.income))}</strong></div>
-          <div class="summary-item"><span>Despesas</span><strong>${escapeHtml(fmt(summary.expense))}</strong></div>
-          <div class="summary-item"><span>Lucro líquido</span><strong>${escapeHtml(fmt(summary.netProfit))}</strong></div>
-          <div class="summary-item"><span>A receber</span><strong>${escapeHtml(fmt(summary.pending))}</strong></div>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Descrição</th>
-              <th>Categoria</th>
-              <th>Data</th>
-              <th>Valor</th>
-              <th>Status</th>
-              <th>Paciente</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${rowsHtml || '<tr><td colspan="6">Nenhuma transação encontrada</td></tr>'}
-          </tbody>
-        </table>
-      </body>
-    </html>
+  printWindow.document.open();
+  printWindow.document.write(html.replace('</body>', '<script>window.onload = () => window.print();</script></body>'));
+  printWindow.document.close();
+}
+
+function buildExportDocument(
+  title: string,
+  summary: { income: number; expense: number; netProfit: number; pending: number },
+  rows: Transaction[],
+) {
+  const htmlDocument = document.implementation.createHTMLDocument(title);
+  const { body, head } = htmlDocument;
+
+  const meta = htmlDocument.createElement('meta');
+  meta.setAttribute('charset', 'UTF-8');
+  head.appendChild(meta);
+
+  const style = htmlDocument.createElement('style');
+  style.textContent = `
+    body { font-family: Arial, Helvetica, sans-serif; color: #111827; padding: 24px; }
+    h1 { margin: 0 0 8px; font-size: 24px; }
+    .subtitle { margin: 0 0 20px; color: #6b7280; }
+    .summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .summary-item { border: 1px solid #d1d5db; border-radius: 12px; padding: 12px; background: #f9fafb; }
+    .summary-item span { display: block; font-size: 12px; color: #6b7280; margin-bottom: 6px; }
+    .summary-item strong { font-size: 18px; color: #111827; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { border: 1px solid #d1d5db; padding: 10px; text-align: left; font-size: 12px; }
+    th { background: #f3f4f6; }
   `;
+  head.appendChild(style);
+
+  const heading = htmlDocument.createElement('h1');
+  heading.textContent = title;
+  body.appendChild(heading);
+
+  const subtitle = htmlDocument.createElement('p');
+  subtitle.className = 'subtitle';
+  subtitle.textContent = `Exportado em ${new Date().toLocaleString('pt-BR')}`;
+  body.appendChild(subtitle);
+
+  const summaryGrid = htmlDocument.createElement('div');
+  summaryGrid.className = 'summary';
+
+  const summaryItems: Array<[string, string]> = [
+    ['Receitas', fmt(summary.income)],
+    ['Despesas', fmt(summary.expense)],
+    ['Lucro líquido', fmt(summary.netProfit)],
+    ['A receber', fmt(summary.pending)],
+  ];
+
+  summaryItems.forEach(([label, value]) => {
+    const item = htmlDocument.createElement('div');
+    item.className = 'summary-item';
+
+    const labelEl = htmlDocument.createElement('span');
+    labelEl.textContent = label;
+
+    const valueEl = htmlDocument.createElement('strong');
+    valueEl.textContent = value;
+
+    item.append(labelEl, valueEl);
+    summaryGrid.appendChild(item);
+  });
+
+  body.appendChild(summaryGrid);
+
+  const table = htmlDocument.createElement('table');
+  const thead = htmlDocument.createElement('thead');
+  const headRow = htmlDocument.createElement('tr');
+  ['Descrição', 'Categoria', 'Data', 'Valor', 'Status', 'Paciente', 'Procedimento'].forEach((header) => {
+    const th = htmlDocument.createElement('th');
+    th.textContent = header;
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+
+  const tbody = htmlDocument.createElement('tbody');
+
+  if (rows.length === 0) {
+    const emptyRow = htmlDocument.createElement('tr');
+    const emptyCell = htmlDocument.createElement('td');
+    emptyCell.setAttribute('colspan', '7');
+    emptyCell.textContent = 'Nenhuma transação encontrada';
+    emptyRow.appendChild(emptyCell);
+    tbody.appendChild(emptyRow);
+  } else {
+    rows.forEach((transaction) => {
+      const row = htmlDocument.createElement('tr');
+      const values = [
+        transaction.description,
+        transaction.category,
+        formatExportDate(transaction.date),
+        `${transaction.type === 'income' ? '+' : '-'}${fmt(transaction.amount)}`,
+        statusMap[transaction.status].label,
+        transaction.patient || '-',
+        transaction.procedure || '-',
+      ];
+
+      values.forEach((value) => {
+        const cell = htmlDocument.createElement('td');
+        cell.textContent = value;
+        row.appendChild(cell);
+      });
+
+      tbody.appendChild(row);
+    });
+  }
+
+  table.append(thead, tbody);
+  body.appendChild(table);
+
+  return `<!DOCTYPE html>${htmlDocument.documentElement.outerHTML}`;
 }
 
 function BarChart({ data }: { data: { month: string; income: number; expense: number }[] }) {
@@ -228,7 +390,7 @@ function MetricCard({
 }) {
   return (
     <div
-      className="p-5 rounded-2xl flex flex-col gap-3 relative overflow-hidden transition-all duration-200 hover:scale-[1.015]"
+      className="relative flex min-h-[126px] flex-col gap-2.5 overflow-hidden rounded-xl p-3.5 transition-all duration-200 hover:scale-[1.015] sm:min-h-[156px] sm:gap-3 sm:rounded-2xl sm:p-5"
       style={{
         background: 'linear-gradient(135deg, rgba(22,22,27,0.92) 0%, rgba(14,14,17,0.96) 100%)',
         border: '1px solid rgba(255,255,255,0.055)',
@@ -241,23 +403,25 @@ function MetricCard({
           background: `radial-gradient(ellipse at 90% 10%, ${color}22 0%, transparent 60%)`,
         }}
       />
-      <div className="flex items-center justify-between relative">
+      <div className="relative flex items-center justify-between gap-2">
         <div
-          className="p-2 rounded-xl"
+          className="rounded-lg p-2 sm:rounded-xl"
           style={{ background: `${color}18`, border: `1px solid ${color}25` }}
         >
           {icon}
         </div>
-        <SparkLine data={sparkData} color={color} />
+        <div className="hidden min-[420px]:block">
+          <SparkLine data={sparkData} color={color} />
+        </div>
       </div>
       <div className="relative">
-        <p className="text-2xl font-bold text-zinc-50 tracking-tight leading-none">{value}</p>
-        {sub && <p className="text-xs text-zinc-600 mt-1 font-medium">{sub}</p>}
+        <p className="break-words text-[20px] font-bold leading-tight text-zinc-50 sm:text-2xl sm:leading-none">{value}</p>
+        {sub && <p className="mt-1 text-[10px] font-medium leading-snug text-zinc-600 sm:text-xs">{sub}</p>}
       </div>
-      <div className="flex items-center justify-between relative">
-        <p className="text-xs text-zinc-500 font-medium">{label}</p>
+      <div className="relative flex items-start justify-between gap-2">
+        <p className="text-[11px] font-medium leading-snug text-zinc-500 sm:text-xs">{label}</p>
         <span
-          className="flex items-center gap-0.5 text-xs font-bold"
+          className="flex shrink-0 items-center gap-0.5 text-[10px] font-bold sm:text-xs"
           style={{ color: positive ? '#34d399' : '#fb7185' }}
         >
           {positive ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
@@ -317,27 +481,32 @@ function DonutChart({ income, expense }: { income: number; expense: number }) {
 }
 
 export function Financeiro() {
-  const [transactions, setTransactions] = useState<Transaction[]>(() => [...mockTransactions]);
+  const {
+    patients,
+    incomes,
+    expenses,
+    addIncome,
+    addExpense,
+    updateIncome,
+    updateExpense,
+    deleteIncome,
+    deleteExpense,
+  } = useApp();
+  const transactions = useMemo<FinancialTransaction[]>(
+    () =>
+      [...incomes.map(incomeToTransaction), ...expenses.map(expenseToTransaction)].sort(
+        (left, right) => new Date(right.date).getTime() - new Date(left.date).getTime(),
+      ),
+    [expenses, incomes],
+  );
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
   const [hoveredRow, setHoveredRow] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
-  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
-  const [transactionToDelete, setTransactionToDelete] = useState<Transaction | null>(null);
-  const [formData, setFormData] = useState<{
-    description: string;
-    category: string;
-    type: 'income' | 'expense';
-    amount: string;
-    payment_method: string;
-    notes: string;
-  }>({
-    description: '',
-    category: 'Procedimento',
-    type: 'income',
-    amount: '',
-    payment_method: 'PIX',
-    notes: '',
-  });
+  const [selectedTransaction, setSelectedTransaction] = useState<FinancialTransaction | null>(null);
+  const [transactionBeingEdited, setTransactionBeingEdited] = useState<FinancialTransaction | null>(null);
+  const [transactionToDelete, setTransactionToDelete] = useState<FinancialTransaction | null>(null);
+  const [formData, setFormData] = useState<TransactionFormData>(() => createEmptyTransactionForm());
+  const [transactionFormMode, setTransactionFormMode] = useState<'create' | 'edit'>('create');
 
   const filtered = transactions.filter((t) => typeFilter === 'all' || t.type === typeFilter);
 
@@ -362,58 +531,206 @@ export function Financeiro() {
   const expenseSparkData = monthlyData.map((month) => month.expense);
   const profitSparkData = monthlyData.map((month) => month.income - month.expense);
 
-  const handleOpenTransaction = (transaction: Transaction) => {
+  const handleOpenTransaction = (transaction: FinancialTransaction) => {
     setSelectedTransaction(transaction);
   };
 
-  const handleRequestDelete = (transaction: Transaction) => {
+  const handleOpenCreateTransaction = () => {
+    setTransactionFormMode('create');
+    setTransactionBeingEdited(null);
+    setFormData(createEmptyTransactionForm());
+    setShowModal(true);
+  };
+
+  const handleOpenEditTransaction = (transaction: FinancialTransaction) => {
+    const isIncome = transaction.sourceType === 'income';
+    const sourceIncome = isIncome ? incomes.find((income) => income.id === transaction.sourceId) ?? null : null;
+    const sourceExpense = !isIncome ? expenses.find((expense) => expense.id === transaction.sourceId) ?? null : null;
+
+    setTransactionFormMode('edit');
+    setTransactionBeingEdited(transaction);
+    setFormData({
+      description: isIncome
+        ? sourceIncome?.service || transaction.description
+        : sourceExpense?.description || transaction.description,
+      category: !isIncome
+        ? expenseCategoryToUiCategory(sourceExpense?.category ?? 'variavel')
+        : 'Procedimento',
+      type: transaction.type,
+      amount: String((isIncome ? sourceIncome?.amount : sourceExpense?.amount) ?? transaction.amount),
+      payment_method: isIncome
+        ? incomePaymentMethodLabels[sourceIncome?.paymentMethod ?? 'pix']
+        : expensePaymentMethodLabels[sourceExpense?.paymentMethod ?? 'pix'],
+      patientId: isIncome ? sourceIncome?.patientId ?? '' : '',
+      patient_name: isIncome ? sourceIncome?.patientName ?? transaction.patient ?? '' : '',
+      procedure: isIncome ? sourceIncome?.service || transaction.procedure || 'Botox' : 'Botox',
+      notes: isIncome ? sourceIncome?.observations ?? '' : sourceExpense?.observations ?? '',
+    });
+    setSelectedTransaction(null);
+    setShowModal(true);
+  };
+
+  const handleRequestDelete = (transaction: FinancialTransaction) => {
     setTransactionToDelete(transaction);
   };
 
-  const handleConfirmDelete = () => {
-    if (!transactionToDelete) return;
-    setTransactions((current) => current.filter((transaction) => transaction.id !== transactionToDelete.id));
-    setSelectedTransaction((current) => (current?.id === transactionToDelete.id ? null : current));
+  const handleConfirmDelete = async () => {
+    const target = transactionToDelete;
+
+    if (!target) {
+      return;
+    }
+
+    const removed =
+      target.sourceType === 'income'
+        ? await deleteIncome(target.sourceId)
+        : await deleteExpense(target.sourceId);
+
+    if (!removed) {
+      alert('Não foi possível excluir a transação.');
+      return;
+    }
+
+    setSelectedTransaction((current) => (current?.id === target.id ? null : current));
     setTransactionToDelete(null);
   };
 
-  const handleAddTransaction = () => {
-    if (!formData.description.trim() || !formData.amount) {
+  const handleSaveTransaction = async () => {
+    if (
+      !formData.description.trim() ||
+      !formData.amount ||
+      (formData.type === 'income' && (!formData.patient_name.trim() || !formData.procedure.trim()))
+    ) {
       alert('Preencha todos os campos obrigatórios');
       return;
     }
 
     const amountValue = Number(formData.amount);
+
     if (Number.isNaN(amountValue) || amountValue <= 0) {
       alert('Informe um valor válido');
       return;
     }
 
-    const newTransaction: Transaction = {
-      id: String(Date.now()),
-      description: formData.description.trim(),
-      category: formData.category,
-      type: formData.type,
+    const today = new Date().toISOString().slice(0, 10);
+
+    if (transactionFormMode === 'edit' && transactionBeingEdited) {
+      if (transactionBeingEdited.sourceType === 'income') {
+        const currentIncome = incomes.find((income) => income.id === transactionBeingEdited.sourceId) ?? null;
+
+        if (!currentIncome) {
+          alert('Não foi possível localizar a entrada para edição.');
+          return;
+        }
+
+        const updatedIncome = await updateIncome(transactionBeingEdited.sourceId, {
+          patientName: formData.patient_name.trim(),
+          service: formData.procedure.trim() || formData.description.trim(),
+          paymentMethod: incomePaymentMethodMap[formData.payment_method] ?? currentIncome.paymentMethod,
+          amount: amountValue,
+          status: currentIncome.status,
+          attendanceDate: currentIncome.attendanceDate || today,
+          observations: formData.notes.trim(),
+          patientId: formData.patientId.trim() || undefined,
+        });
+
+        if (!updatedIncome) {
+          alert('Não foi possível atualizar a entrada.');
+          return;
+        }
+
+        const nextTransaction = incomeToTransaction(updatedIncome as Income);
+        setShowModal(false);
+        setTransactionBeingEdited(null);
+        setTransactionFormMode('create');
+        setFormData(createEmptyTransactionForm());
+        setSelectedTransaction(nextTransaction);
+        alert('Entrada atualizada com sucesso!');
+        return;
+      }
+
+      const currentExpense = expenses.find((expense) => expense.id === transactionBeingEdited.sourceId) ?? null;
+
+      if (!currentExpense) {
+        alert('Não foi possível localizar a despesa para edição.');
+        return;
+      }
+
+      const updatedExpense = await updateExpense(transactionBeingEdited.sourceId, {
+        description: formData.description.trim(),
+        category: uiCategoryToExpenseCategory(formData.category),
+        paymentMethod: expensePaymentMethodMap[formData.payment_method] ?? currentExpense.paymentMethod,
+        amount: amountValue,
+        status: currentExpense.status,
+        date: currentExpense.date || today,
+        observations: formData.notes.trim(),
+      });
+
+      if (!updatedExpense) {
+        alert('Não foi possível atualizar a despesa.');
+        return;
+      }
+
+      const nextTransaction = expenseToTransaction(updatedExpense as Expense);
+      setShowModal(false);
+      setTransactionBeingEdited(null);
+      setTransactionFormMode('create');
+      setFormData(createEmptyTransactionForm());
+      setSelectedTransaction(nextTransaction);
+      alert('Despesa atualizada com sucesso!');
+      return;
+    }
+
+    const commonFields = {
       amount: amountValue,
-      date: new Date().toISOString().slice(0, 10),
-      status: 'paid',
+      status: 'paid' as const,
+      observations: formData.notes.trim(),
     };
 
-    setTransactions((current) => [newTransaction, ...current]);
-    setFormData({
-      description: '',
-      category: 'Procedimento',
-      type: 'income',
-      amount: '',
-      payment_method: 'PIX',
-      notes: '',
+    if (formData.type === 'income') {
+      const savedIncome = await addIncome({
+        ...commonFields,
+        patientName: formData.patient_name.trim(),
+        service: formData.procedure.trim(),
+        paymentMethod: incomePaymentMethodMap[formData.payment_method] ?? 'pix',
+        attendanceDate: today,
+        patientId: formData.patientId.trim() || undefined,
+      });
+
+      if (!savedIncome) {
+        alert('Não foi possível salvar a entrada.');
+        return;
+      }
+
+      const nextTransaction = incomeToTransaction(savedIncome as Income);
+      setFormData(createEmptyTransactionForm());
+      setShowModal(false);
+      setSelectedTransaction(nextTransaction);
+      alert('Entrada adicionada com sucesso!');
+      return;
+    }
+
+    const savedExpense = await addExpense({
+      ...commonFields,
+      description: formData.description.trim(),
+      category: uiCategoryToExpenseCategory(formData.category),
+      paymentMethod: expensePaymentMethodMap[formData.payment_method] ?? 'pix',
+      date: today,
     });
+
+    if (!savedExpense) {
+      alert('Não foi possível salvar a despesa.');
+      return;
+    }
+
+    const nextTransaction = expenseToTransaction(savedExpense as Expense);
+    setFormData(createEmptyTransactionForm());
     setShowModal(false);
-    setSelectedTransaction(newTransaction);
-    alert('Transação adicionada com sucesso!');
+    setSelectedTransaction(nextTransaction);
+    alert('Despesa adicionada com sucesso!');
   };
 
-  const handleExport = (format: 'excel' | 'word') => {
+  const handleExport = (format: 'excel' | 'pdf') => {
     const title = 'Relatório Financeiro';
     const exportRows = filtered;
     const summary = {
@@ -430,38 +747,25 @@ export function Financeiro() {
       return;
     }
 
-    downloadFile(`financeiro-${new Date().toISOString().slice(0, 10)}.doc`, html, 'application/msword');
+    printPdfDocument(html);
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-zinc-50 tracking-tight">Financeiro</h2>
+    <div className="max-w-7xl mx-auto space-y-6 relative">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h2 className="text-2xl font-bold text-zinc-50 tracking-tight">Financeiro</h2>
+            <BackButton to="dashboard" />
+          </div>
           <p className="text-sm text-zinc-500 mt-0.5">Abril 2024 — visão completa</p>
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="secondary"
-            icon={<Download size={14} />}
-            size="sm"
-            onClick={() => handleExport('excel')}
-          >
-            Excel
-          </Button>
-          <Button
-            variant="secondary"
-            icon={<Download size={14} />}
-            size="sm"
-            onClick={() => handleExport('word')}
-          >
-            Word
-          </Button>
-          <Button icon={<Plus size={15} />} size="sm" onClick={() => setShowModal(true)}>Nova Transação</Button>
+        <div className="sm:flex">
+          <Button icon={<Plus size={15} />} size="sm" onClick={handleOpenCreateTransaction}>Nova Transação</Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <MetricCard
           label="Receitas em Abril"
           value={fmt(totalIncome)}
@@ -504,22 +808,22 @@ export function Financeiro() {
         />
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:gap-6">
         <div className="lg:col-span-2 space-y-4">
           <div
-            className="rounded-2xl p-5"
+            className="rounded-xl p-3.5 sm:rounded-2xl sm:p-5"
             style={{
               background: 'linear-gradient(135deg, rgba(22,22,27,0.92) 0%, rgba(14,14,17,0.96) 100%)',
               border: '1px solid rgba(255,255,255,0.055)',
               boxShadow: '0 1px 0 rgba(255,255,255,0.04) inset, 0 4px 24px rgba(0,0,0,0.35)',
             }}
           >
-            <div className="flex items-center justify-between mb-1">
+            <div className="mb-1 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h3 className="text-base font-bold text-zinc-200 tracking-tight">Receitas vs Despesas</h3>
                 <p className="text-xs text-zinc-600 mt-0.5">Últimos 6 meses</p>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <div className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-teal-400" style={{ boxShadow: '0 0 5px rgba(20,184,166,0.6)' }} />
                   <span className="text-xs text-zinc-500 font-medium">Receitas</span>
@@ -534,14 +838,14 @@ export function Financeiro() {
           </div>
 
           <div
-            className="flex items-center gap-1 rounded-xl p-1 w-fit"
+            className="grid w-full grid-cols-3 gap-1 rounded-xl p-1 sm:flex sm:w-fit sm:items-center"
             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}
           >
             {(['all', 'income', 'expense'] as const).map((t) => (
               <button
                 key={t}
                 onClick={() => setTypeFilter(t)}
-                className="px-4 py-1.5 rounded-lg text-xs font-semibold tracking-tight transition-all duration-150"
+                className="rounded-lg px-2 py-1.5 text-[11px] font-semibold tracking-tight transition-all duration-150 sm:px-4 sm:text-xs"
                 style={{
                   background: typeFilter === t ? 'linear-gradient(135deg, #14b8a6, #0d9488)' : 'transparent',
                   color: typeFilter === t ? '#022c22' : '#71717a',
@@ -554,14 +858,14 @@ export function Financeiro() {
           </div>
 
           <div
-            className="overflow-hidden rounded-2xl"
+            className="overflow-hidden rounded-xl sm:rounded-2xl"
             style={{
               background: 'linear-gradient(135deg, rgba(22,22,27,0.92) 0%, rgba(14,14,17,0.96) 100%)',
               border: '1px solid rgba(255,255,255,0.055)',
               boxShadow: '0 1px 0 rgba(255,255,255,0.04) inset, 0 4px 24px rgba(0,0,0,0.35)',
             }}
           >
-            <div className="overflow-x-auto">
+            <div className="hidden overflow-x-auto sm:block">
               <table className="w-full">
                 <thead>
                   <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
@@ -603,6 +907,7 @@ export function Financeiro() {
                           <div>
                             <p className="text-sm font-semibold text-zinc-200 tracking-tight">{t.description}</p>
                             {t.patient && <p className="text-xs text-zinc-600 mt-0.5">{t.patient}</p>}
+                            {t.procedure && <p className="text-xs text-zinc-600 mt-0.5">{t.procedure}</p>}
                           </div>
                         </div>
                       </td>
@@ -648,12 +953,54 @@ export function Financeiro() {
                 </tbody>
               </table>
             </div>
+            <div className="space-y-2 p-3 sm:hidden">
+              {filtered.map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => handleOpenTransaction(t)}
+                  className="w-full rounded-xl border border-white/[0.055] bg-white/[0.025] p-3 text-left transition-all hover:bg-white/[0.04]"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div
+                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg"
+                        style={{
+                          background: t.type === 'income'
+                            ? 'rgba(20,184,166,0.1)'
+                            : 'rgba(244,63,94,0.1)',
+                          border: `1px solid ${t.type === 'income' ? 'rgba(20,184,166,0.15)' : 'rgba(244,63,94,0.15)'}`,
+                        }}
+                      >
+                        {t.type === 'income'
+                          ? <ArrowUpRight size={13} className="text-teal-400" />
+                          : <ArrowDownRight size={13} className="text-red-400" />}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-[13px] font-semibold text-zinc-200">{t.description}</p>
+                        <p className="mt-0.5 truncate text-[11px] text-zinc-600">{t.patient || t.category}</p>
+                      </div>
+                    </div>
+                    <span
+                      className="shrink-0 text-right text-[12px] font-bold"
+                      style={{ color: t.type === 'income' ? '#34d399' : '#fb7185' }}
+                    >
+                      {t.type === 'income' ? '+' : '-'}{fmt(t.amount)}
+                    </span>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <span className="text-[11px] font-medium text-zinc-600">{t.date}</span>
+                    <Badge variant={statusMap[t.status].variant} dot>{statusMap[t.status].label}</Badge>
+                  </div>
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
         <div className="space-y-4">
           <div
-            className="rounded-2xl p-5"
+            className="rounded-xl p-3.5 sm:rounded-2xl sm:p-5"
             style={{
               background: 'linear-gradient(135deg, rgba(22,22,27,0.92) 0%, rgba(14,14,17,0.96) 100%)',
               border: '1px solid rgba(255,255,255,0.055)',
@@ -661,7 +1008,7 @@ export function Financeiro() {
             }}
           >
             <h3 className="text-base font-bold text-zinc-200 tracking-tight mb-4">Distribuição</h3>
-            <div className="flex items-center gap-5">
+            <div className="flex flex-col gap-4 min-[420px]:flex-row min-[420px]:items-center min-[420px]:gap-5">
               <DonutChart income={totalIncome} expense={totalExpense} />
               <div className="flex-1 space-y-3">
                 {[
@@ -755,21 +1102,54 @@ export function Financeiro() {
         </div>
       </div>
 
+      <div className="flex flex-col gap-2 border-t border-white/[0.06] pt-5 sm:flex-row sm:items-center sm:justify-end">
+        <Button
+          variant="secondary"
+          icon={<Download size={14} />}
+          size="sm"
+          onClick={() => handleExport('excel')}
+        >
+          Exportar em Excel
+        </Button>
+        <Button
+          variant="secondary"
+          icon={<Download size={14} />}
+          size="sm"
+          onClick={() => handleExport('pdf')}
+        >
+          Exportar em PDF
+        </Button>
+      </div>
+
       {showModal && (
         <Modal
           title="Nova Transação"
-          onClose={() => setShowModal(false)}
-          footer={
-            <div className="flex justify-end gap-3">
-              <Button variant="ghost" size="sm" onClick={() => setShowModal(false)}>
-                Cancelar
-              </Button>
-              <Button size="sm" onClick={handleAddTransaction}>
-                Adicionar
-              </Button>
-            </div>
-          }
-        >
+              onClose={() => {
+                setShowModal(false);
+                setTransactionBeingEdited(null);
+                setTransactionFormMode('create');
+                setFormData(createEmptyTransactionForm());
+              }}
+              footer={
+                <div className="flex justify-end gap-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setShowModal(false);
+                      setTransactionBeingEdited(null);
+                      setTransactionFormMode('create');
+                      setFormData(createEmptyTransactionForm());
+                    }}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button size="sm" onClick={handleSaveTransaction}>
+                    {transactionFormMode === 'edit' ? 'Salvar alterações' : 'Adicionar'}
+                  </Button>
+                </div>
+              }
+            >
           <div className="space-y-4">
             <div>
               <label className="block text-[11px] font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">Descrição *</label>
@@ -781,6 +1161,65 @@ export function Financeiro() {
                 className="w-full px-3 py-2 rounded-xl text-[13px] text-zinc-200 placeholder-zinc-600 outline-none transition-all"
                 style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
               />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">
+                Paciente cadastrado {formData.type === 'income' ? '*' : '(opcional)'}
+              </label>
+              <select
+                value={formData.patientId}
+                onChange={(e) => {
+                  const selectedPatient = patients.find((patient) => patient.id === e.target.value);
+                  setFormData((current) => ({
+                    ...current,
+                    patientId: e.target.value,
+                    patient_name: selectedPatient?.name ?? current.patient_name,
+                  }));
+                }}
+                className="w-full px-3 py-2 rounded-xl text-[13px] text-zinc-200 outline-none appearance-none transition-all"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+              >
+                <option value="" style={{ background: '#0d0e14' }}>
+                  Selecionar paciente...
+                </option>
+                {patients.map((patient) => (
+                  <option key={patient.id} value={patient.id} style={{ background: '#0d0e14' }}>
+                    {patient.name}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-1 text-[10px] text-zinc-600">Lista carregada do cadastro de pacientes.</p>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">
+                Nome do paciente {formData.type === 'income' ? '*' : '(opcional)'}
+              </label>
+              <input
+                type="text"
+                placeholder="Ex: Ana Silva"
+                value={formData.patient_name}
+                onChange={(e) => setFormData({ ...formData, patient_name: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl text-[13px] text-zinc-200 placeholder-zinc-600 outline-none transition-all"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-semibold text-zinc-500 uppercase tracking-wider mb-1.5">
+                Procedimento realizado {formData.type === 'income' ? '*' : '(opcional)'}
+              </label>
+              <select
+                value={formData.procedure}
+                onChange={(e) => setFormData({ ...formData, procedure: e.target.value })}
+                className="w-full px-3 py-2 rounded-xl text-[13px] text-zinc-200 outline-none appearance-none transition-all"
+                style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
+              >
+                {procedures.map((procedure) => (
+                  <option key={procedure} value={procedure} style={{ background: '#0d0e14' }}>{procedure}</option>
+                ))}
+              </select>
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -858,13 +1297,20 @@ export function Financeiro() {
       )}
 
       {selectedTransaction && (
-        <Modal
+          <Modal
           title="Detalhes da transação"
           subtitle={selectedTransaction.description}
           onClose={() => setSelectedTransaction(null)}
           maxWidth="max-w-2xl"
           footer={
             <div className="flex justify-end gap-3">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => handleOpenEditTransaction(selectedTransaction)}
+              >
+                Editar
+              </Button>
               <Button variant="ghost" size="sm" onClick={() => setSelectedTransaction(null)}>
                 Fechar
               </Button>
@@ -912,6 +1358,12 @@ export function Financeiro() {
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-zinc-500">Categoria</span>
                   <span className="text-xs font-semibold text-zinc-300">{selectedTransaction.category}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-zinc-500">Procedimento</span>
+                  <span className="text-xs font-semibold text-zinc-300">
+                    {selectedTransaction.procedure || 'Sem procedimento informado'}
+                  </span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-zinc-500">Data</span>

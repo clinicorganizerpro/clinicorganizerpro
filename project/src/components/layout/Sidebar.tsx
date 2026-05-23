@@ -3,12 +3,13 @@ import {
   Calendar,
   Users,
   DollarSign,
-  Settings,
+  CreditCard,
   X,
   ChevronLeft,
   ChevronRight,
   MessageCircle,
   Megaphone,
+  Settings,
 } from 'lucide-react';
 import { PageId } from '../../hooks/useNavigation';
 import clinicOrganizerLogo from '../../assets/clinic-organizer-pro-logo.svg';
@@ -19,6 +20,9 @@ type SidebarAppContext = {
   t: (key: string, fallback?: string) => string;
   clinicProfile?: {
     clinicName?: string;
+    city?: string;
+    phone?: string;
+    email?: string;
     address?: string;
   } | null;
   toggleTheme?: () => void;
@@ -35,10 +39,11 @@ interface SidebarProps {
 }
 
 const navItems = [
-  { id: 'dashboard' as PageId, labelKey: 'sidebar.dashboard', fallback: 'Dashboard', icon: LayoutDashboard },
+  { id: 'dashboard' as PageId, labelKey: 'sidebar.dashboard', fallback: 'Painel', icon: LayoutDashboard },
   { id: 'agenda' as PageId, labelKey: 'sidebar.agenda', fallback: 'Agenda', icon: Calendar },
   { id: 'pacientes' as PageId, labelKey: 'sidebar.patients', fallback: 'Pacientes', icon: Users },
   { id: 'financeiro' as PageId, labelKey: 'sidebar.financial', fallback: 'Financeiro', icon: DollarSign },
+  { id: 'planos' as PageId, labelKey: 'sidebar.plans', fallback: 'Planos', icon: CreditCard },
   { id: 'whatsapp' as PageId, labelKey: 'sidebar.whatsapp', fallback: 'WhatsApp', icon: MessageCircle },
   { id: 'marketing' as PageId, labelKey: 'sidebar.marketing', fallback: 'Marketing', icon: Megaphone },
   { id: 'configuracoes' as PageId, labelKey: 'sidebar.settings', fallback: 'Configurações', icon: Settings },
@@ -55,15 +60,12 @@ export function Sidebar({
   const app = useApp() as unknown as SidebarAppContext;
   const { theme, t, clinicProfile } = app;
 
-  const clinicName = clinicProfile?.clinicName ?? t('sidebar.clinicName', 'Clínica Estética');
-  const clinicAddress = clinicProfile?.address ?? t('sidebar.clinicAddress', 'Av. Paulista, 1000 - São Paulo, SP');
-  const clinicInitials = clinicName
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part: string) => part[0]?.toUpperCase() ?? '')
-    .join('') || 'CL';
+  const clinicName = clinicProfile?.clinicName?.trim() ?? '';
+  const clinicLocationLine = (clinicProfile?.city?.trim() || clinicProfile?.address?.trim() || '').trim();
+  const clinicPhone = clinicProfile?.phone?.trim() ?? '';
+  const clinicEmail = clinicProfile?.email?.trim() ?? '';
+
+  const clinicHasInfo = Boolean(clinicName || clinicLocationLine || clinicPhone || clinicEmail);
 
   const handleNavigate = (page: PageId) => {
     onNavigate(page);
@@ -180,32 +182,44 @@ export function Sidebar({
           })}
         </nav>
 
-        <div className="relative px-3 py-4 space-y-3" style={{ borderTop: theme === 'light' ? '1px solid rgba(15,23,42,0.06)' : '1px solid rgba(255,255,255,0.05)' }}>
-          <div
-            className={`flex items-center gap-3 py-2.5 rounded-xl cursor-pointer transition-all duration-150 group ${isDesktopCollapsed ? 'justify-center px-2' : 'px-3'}`}
-            style={{ background: theme === 'light' ? 'rgba(15,23,42,0.03)' : 'rgba(255,255,255,0.02)' }}
-            title={`${clinicName} • ${clinicAddress}`}
-          >
-            <div
-              className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-teal-300 flex-shrink-0"
-              style={{
-                background: 'linear-gradient(135deg, rgba(20,184,166,0.25), rgba(13,148,136,0.15))',
-                border: '1px solid rgba(20,184,166,0.2)',
-              }}
+        <div className="relative px-2 py-3 space-y-3" style={{ borderTop: theme === 'light' ? '1px solid rgba(15,23,42,0.06)' : '1px solid rgba(255,255,255,0.05)' }}>
+          {clinicHasInfo && (
+            <button
+              type="button"
+              onClick={() => handleNavigate('configuracoes')}
+              className={`flex items-center gap-3 py-2.5 rounded-xl cursor-pointer transition-all duration-150 group ${isDesktopCollapsed ? 'justify-center px-2' : 'px-3'}`}
+              style={{ background: theme === 'light' ? 'rgba(15,23,42,0.03)' : 'rgba(255,255,255,0.02)' }}
+              title={`${clinicName}${clinicLocationLine ? ` • ${clinicLocationLine}` : ''}`}
             >
-              {clinicInitials}
-            </div>
-            {!isDesktopCollapsed && (
-              <>
-                <div className="flex-1 min-w-0">
-                  <p className={`text-xs font-semibold truncate tracking-tight ${theme === 'light' ? 'text-slate-700' : 'text-zinc-300'}`}>{clinicName}</p>
-                  <p className={`text-xs truncate ${theme === 'light' ? 'text-slate-500' : 'text-zinc-600'}`}>{clinicAddress}</p>
-                </div>
-                <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" style={{ boxShadow: '0 0 6px rgba(52,211,153,0.6)' }} />
-              </>
-            )}
-          </div>
-
+              {!isDesktopCollapsed && (
+                <>
+                  <div className="flex-1 min-w-0 text-left">
+                    {clinicName && (
+                      <p className={`text-xs font-semibold truncate tracking-tight ${theme === 'light' ? 'text-slate-700' : 'text-zinc-300'}`}>
+                        {clinicName}
+                      </p>
+                    )}
+                    {clinicLocationLine && (
+                      <p className={`text-[11px] truncate ${theme === 'light' ? 'text-slate-500' : 'text-zinc-600'}`}>
+                        {clinicLocationLine}
+                      </p>
+                    )}
+                    {clinicPhone && (
+                      <p className={`text-[11px] truncate ${theme === 'light' ? 'text-slate-500' : 'text-zinc-600'}`}>
+                        {clinicPhone}
+                      </p>
+                    )}
+                    {clinicEmail && (
+                      <p className={`text-[11px] truncate ${theme === 'light' ? 'text-slate-500' : 'text-zinc-600'}`}>
+                        {clinicEmail}
+                      </p>
+                    )}
+                  </div>
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 flex-shrink-0" style={{ boxShadow: '0 0 6px rgba(52,211,153,0.6)' }} />
+                </>
+              )}
+            </button>
+          )}
         </div>
       </aside>
     </>

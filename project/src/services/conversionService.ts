@@ -1,9 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
+import { supabase } from '../lib/supabase';
 
 export interface SmartSuggestion {
   type: 'next_available' | 'priority_slots' | 'urgency_warning' | 'last_slots';
@@ -33,6 +28,20 @@ export interface AvailabilityAlert {
   slotsPercentage: number;
   message: string;
 }
+
+type ProfessionalRow = {
+  start_time: string;
+  end_time: string;
+  lunch_start: string;
+  lunch_end: string;
+  available_days: string[];
+};
+
+type AppointmentRow = {
+  appointment_time: string;
+  end_time: string;
+  conversion_source?: 'waitlist' | 'suggestion' | 'urgency_trigger' | string | null;
+};
 
 function timeToMinutes(time: string): number {
   const [hours, minutes] = time.split(':').map(Number);
@@ -73,12 +82,12 @@ function isTimeOverlap(slot1Start: string, slot1End: string, slot2Start: string,
   return s1 < e2 && s2 < e1;
 }
 
-async function getProfessionalAvailability(professionalId: string) {
-  const { data: professional } = await supabase
+async function getProfessionalAvailability(professionalId: string): Promise<ProfessionalRow | null> {
+  const { data: professional } = (await supabase
     .from('professionals')
     .select('start_time, end_time, lunch_start, lunch_end, available_days')
     .eq('id', professionalId)
-    .maybeSingle();
+    .maybeSingle()) as { data: ProfessionalRow | null };
 
   return professional;
 }
@@ -91,12 +100,12 @@ async function getAvailableSlotsForDate(
   const professional = await getProfessionalAvailability(professionalId);
   if (!professional) return { available: 0, total: 0, slots: [] };
 
-  const { data: appointments } = await supabase
+  const { data: appointments } = (await supabase
     .from('appointments')
     .select('appointment_time, end_time, status')
     .eq('professional_id', professionalId)
     .eq('appointment_date', date)
-    .eq('status', 'confirmed');
+    .eq('status', 'confirmed')) as { data: AppointmentRow[] | null };
 
   const slots: string[] = [];
   let currentTime = timeToMinutes(professional.start_time);
@@ -439,20 +448,27 @@ export async function getProfessionalAvailabilityMetrics(
 
 export async function getConversionMetrics(professionalId: string) {
   try {
-    const { data: conversions } = await supabase
+    const { data: conversions } = (await supabase
       .from('appointments')
       .select('id, conversion_source, created_at')
       .eq('professional_id', professionalId)
-      .in('conversion_source', ['waitlist', 'suggestion', 'urgency_trigger']);
+      .in('conversion_source', ['waitlist', 'suggestion', 'urgency_trigger'])) as {
+      data: AppointmentRow[] | null;
+    };
 
-    const totalAppointments = await supabase
+    const totalAppointmentsResponse = (await supabase
       .from('appointments')
       .select('id', { count: 'exact' })
-      .eq('professional_id', professionalId);
+      .eq('professional_id', professionalId)) as {
+      data: Array<{ id: string }> | null;
+      count?: number;
+    };
+
+    const totalAppointments = totalAppointmentsResponse.count ?? totalAppointmentsResponse.data?.length ?? 0;
 
     const metrics = {
       totalConversions: conversions?.length || 0,
-      totalAppointments: totalAppointments.count || 0,
+      totalAppointments,
       conversionRate: 0,
       conversionBySource: {
         waitlist: 0,
@@ -466,7 +482,7 @@ export async function getConversionMetrics(professionalId: string) {
     }
 
     conversions?.forEach((appt) => {
-      const source: unknown = appt.conversion_source;
+      const source = appt.conversion_source;
       if (source === 'waitlist' || source === 'suggestion' || source === 'urgency_trigger') {
         metrics.conversionBySource[source]++;
       }

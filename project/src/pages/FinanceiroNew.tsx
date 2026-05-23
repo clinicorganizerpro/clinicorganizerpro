@@ -56,7 +56,14 @@ const categories = ['Procedimento', 'Insumos', 'Infraestrutura', 'Tecnologia', '
 const paymentMethods = ['Dinheiro', 'Cartão Crédito', 'Cartão Débito', 'PIX', 'Transferência', 'Outro'];
 
 export function Financeiro() {
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>(() => {
+    try {
+      const stored = localStorage.getItem('financeiro_transactions');
+      return stored ? (JSON.parse(stored) as Transaction[]) : [];
+    } catch {
+      return [];
+    }
+  });
   const [loading, setLoading] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState<{
@@ -65,6 +72,7 @@ export function Financeiro() {
     type: 'income' | 'expense';
     amount: string;
     payment_method: string;
+    patient_name: string;
     notes: string;
   }>({
     description: '',
@@ -72,6 +80,7 @@ export function Financeiro() {
     type: 'income',
     amount: '',
     payment_method: 'PIX',
+    patient_name: '',
     notes: '',
   });
 
@@ -79,11 +88,10 @@ export function Financeiro() {
     setLoading(true);
     try {
       const stored = localStorage.getItem('financeiro_transactions');
-      if (stored) {
-        setTransactions(JSON.parse(stored));
-      }
+      setTransactions(stored ? (JSON.parse(stored) as Transaction[]) : []);
     } catch (error) {
       console.error('Error loading transactions:', error);
+      setTransactions([]);
     }
     setLoading(false);
   };
@@ -92,8 +100,12 @@ export function Financeiro() {
     loadTransactions();
   }, []);
 
+  useEffect(() => {
+    localStorage.setItem('financeiro_transactions', JSON.stringify(transactions));
+  }, [transactions]);
+
   const handleAddTransaction = async () => {
-    if (!formData.description || !formData.amount) {
+    if (!formData.description || !formData.amount || (formData.type === 'income' && !formData.patient_name)) {
       alert('Preencha todos os campos obrigatórios');
       return;
     }
@@ -116,7 +128,7 @@ export function Financeiro() {
       payment_method: formData.payment_method,
       notes: formData.notes,
       patient_id: null,
-      patient_name: null,
+      patient_name: formData.type === 'income' ? formData.patient_name : null,
       clinic_id: null,
       created_at: now,
       updated_at: now,
@@ -124,7 +136,6 @@ export function Financeiro() {
 
     const updated = [...transactions, newTransaction];
     setTransactions(updated);
-    localStorage.setItem('financeiro_transactions', JSON.stringify(updated));
 
     setFormData({
       description: '',
@@ -132,6 +143,7 @@ export function Financeiro() {
       type: 'income',
       amount: '',
       payment_method: 'PIX',
+      patient_name: '',
       notes: '',
     });
     setShowModal(false);
@@ -142,10 +154,9 @@ export function Financeiro() {
     const today = now.split('T')[0];
 
     const updated = transactions.map((t) =>
-      t.id === id ? { ...t, status: 'paid' as const, paid_date: today, updated_at: now } : t
+      t.id === id ? { ...t, status: 'paid' as const, paid_date: today, updated_at: now } : t,
     );
     setTransactions(updated);
-    localStorage.setItem('financeiro_transactions', JSON.stringify(updated));
   };
 
   const handleDelete = (id: string) => {
@@ -153,7 +164,6 @@ export function Financeiro() {
 
     const updated = transactions.filter((t) => t.id !== id);
     setTransactions(updated);
-    localStorage.setItem('financeiro_transactions', JSON.stringify(updated));
   };
 
   // Calcular totais
@@ -281,6 +291,7 @@ export function Financeiro() {
                     <td className="py-3 px-4">
                       <div>
                         <p className="text-gray-100">{trans.description}</p>
+                        <p className="text-xs text-gray-500">{trans.patient_name || 'Sem paciente'}</p>
                         <p className="text-xs text-gray-500">{trans.payment_method}</p>
                       </div>
                     </td>
@@ -360,9 +371,22 @@ export function Financeiro() {
               <label className="block text-sm font-medium text-gray-300 mb-2">Descrição *</label>
               <input
                 type="text"
-                placeholder="Ex: Agulha para consulta"
+                placeholder="Ex: Consulta particular"
                 value={formData.description}
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-emerald-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Nome do paciente {formData.type === 'income' ? '*' : '(opcional)'}
+              </label>
+              <input
+                type="text"
+                placeholder="Ex: Ana Silva"
+                value={formData.patient_name}
+                onChange={(e) => setFormData({ ...formData, patient_name: e.target.value })}
                 className="w-full px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-emerald-500"
               />
             </div>

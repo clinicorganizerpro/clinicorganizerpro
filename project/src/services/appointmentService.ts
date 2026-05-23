@@ -1,9 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabase';
 
-const supabase = createClient(
-  import.meta.env.VITE_SUPABASE_URL,
-  import.meta.env.VITE_SUPABASE_ANON_KEY
-);
 
 export interface AppointmentData {
   patientId: string;
@@ -18,6 +14,32 @@ export interface AvailableSlot {
   time: string;
   available: boolean;
 }
+
+type AppointmentRow = {
+  id: string;
+  patient_id?: string;
+  professional_id: string;
+  service_id: string;
+  appointment_date: string;
+  appointment_time: string;
+  end_time: string;
+  duration_minutes: number;
+  status: string;
+  notes?: string | null;
+};
+
+type ProfessionalRow = {
+  id: string;
+  start_time: string;
+  end_time: string;
+  lunch_start: string;
+  lunch_end: string;
+  available_days: string[];
+};
+
+type ServiceRow = {
+  duration_minutes?: number;
+};
 
 function timeToMinutes(time: string): number {
   const [hours, minutes] = time.split(':').map(Number);
@@ -55,37 +77,35 @@ async function getConflictingAppointments(
   appointmentTime: string,
   endTime: string
 ): Promise<boolean> {
-  const { data: conflicts } = await supabase
+  const { data: conflicts } = (await supabase
     .from('appointments')
     .select('appointment_time, end_time, status')
     .eq('professional_id', professionalId)
     .eq('appointment_date', appointmentDate)
     .eq('status', 'confirmed')
-    .neq('status', 'cancelled');
+    .neq('status', 'cancelled')) as { data: AppointmentRow[] | null };
 
   if (!conflicts) return false;
 
-  return conflicts.some(conf =>
-    isTimeOverlap(appointmentTime, endTime, conf.appointment_time, conf.end_time)
-  );
+  return conflicts.some((conf) => isTimeOverlap(appointmentTime, endTime, conf.appointment_time, conf.end_time));
 }
 
 async function getProfessionalAvailability(professionalId: string) {
-  const { data: professional } = await supabase
+  const { data: professional } = (await supabase
     .from('professionals')
     .select('start_time, end_time, lunch_start, lunch_end, available_days')
     .eq('id', professionalId)
-    .maybeSingle();
+    .maybeSingle()) as { data: ProfessionalRow | null };
 
   return professional;
 }
 
 async function getServiceDuration(serviceId: string): Promise<number> {
-  const { data: service } = await supabase
+  const { data: service } = (await supabase
     .from('services')
     .select('duration_minutes')
     .eq('id', serviceId)
-    .maybeSingle();
+    .maybeSingle()) as { data: ServiceRow | null };
 
   return service?.duration_minutes || 30;
 }
@@ -127,7 +147,7 @@ export async function createAppointment(data: AppointmentData) {
       throw new Error('Time slot already booked');
     }
 
-    const { data: appointment, error: appointmentError } = await supabase
+    const { data: appointment, error: appointmentError } = (await supabase
       .from('appointments')
       .insert({
         patient_id: data.patientId,
@@ -141,7 +161,7 @@ export async function createAppointment(data: AppointmentData) {
         notes: data.notes,
       })
       .select()
-      .maybeSingle();
+      .maybeSingle()) as { data: AppointmentRow | null; error: { message: string } | null };
 
     if (appointmentError) throw appointmentError;
 
@@ -187,11 +207,11 @@ export async function rescheduleAppointment(
   newTime: string
 ) {
   try {
-    const { data: appointment } = await supabase
+    const { data: appointment } = (await supabase
       .from('appointments')
       .select('*')
       .eq('id', appointmentId)
-      .maybeSingle();
+      .maybeSingle()) as { data: AppointmentRow | null };
 
     if (!appointment) throw new Error('Appointment not found');
 
@@ -256,12 +276,12 @@ export async function getAvailableSlots(
       return [];
     }
 
-    const { data: appointments } = await supabase
+    const { data: appointments } = (await supabase
       .from('appointments')
       .select('appointment_time, end_time, status')
       .eq('professional_id', professionalId)
       .eq('appointment_date', date)
-      .eq('status', 'confirmed');
+      .eq('status', 'confirmed')) as { data: AppointmentRow[] | null };
 
     const slots: AvailableSlot[] = [];
     let currentTime = timeToMinutes(professional.start_time);
@@ -305,14 +325,14 @@ export async function addToWaitlist(
   notes?: string
 ) {
   try {
-    const { data: waitlistCount } = await supabase
+    const { data: waitlistCount } = (await supabase
       .from('waitlist')
       .select('id', { count: 'exact' })
-      .eq('professional_id', professionalId);
+      .eq('professional_id', professionalId)) as { data: Array<{ id: string }> | null };
 
     const position = (waitlistCount?.length || 0) + 1;
 
-    const { data: waitlistEntry, error } = await supabase
+    const { data: waitlistEntry, error } = (await supabase
       .from('waitlist')
       .insert({
         patient_id: patientId,
@@ -325,7 +345,7 @@ export async function addToWaitlist(
         position,
       })
       .select()
-      .maybeSingle();
+      .maybeSingle()) as { data: { id: string } | null; error: { message: string } | null };
 
     if (error) throw error;
 
@@ -337,11 +357,11 @@ export async function addToWaitlist(
 
 export async function getWaitlist(professionalId: string) {
   try {
-    const { data: waitlist } = await supabase
+    const { data: waitlist } = (await supabase
       .from('waitlist')
       .select('*, patients(name, email, phone), services(name)')
       .eq('professional_id', professionalId)
-      .order('position', { ascending: true });
+      .order('position', { ascending: true })) as { data: unknown[] | null };
 
     return { success: true, waitlist };
   } catch (error) {
@@ -366,11 +386,11 @@ export async function removeFromWaitlist(waitlistId: string) {
 
 export async function getPatientAppointments(patientId: string) {
   try {
-    const { data: appointments } = await supabase
+    const { data: appointments } = (await supabase
       .from('appointments')
       .select('*, professionals(name, specialty), services(name, duration_minutes)')
       .eq('patient_id', patientId)
-      .order('appointment_date', { ascending: false });
+      .order('appointment_date', { ascending: false })) as { data: unknown[] | null };
 
     return { success: true, appointments };
   } catch (error) {
@@ -380,13 +400,13 @@ export async function getPatientAppointments(patientId: string) {
 
 export async function getProfessionalSchedule(professionalId: string, date: string) {
   try {
-    const { data: appointments } = await supabase
+    const { data: appointments } = (await supabase
       .from('appointments')
       .select('*, patients(name, email, phone), services(name, duration_minutes)')
       .eq('professional_id', professionalId)
       .eq('appointment_date', date)
       .neq('status', 'cancelled')
-      .order('appointment_time', { ascending: true });
+      .order('appointment_time', { ascending: true })) as { data: unknown[] | null };
 
     return { success: true, appointments };
   } catch (error) {

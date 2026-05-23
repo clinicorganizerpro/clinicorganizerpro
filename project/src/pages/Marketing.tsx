@@ -3,6 +3,7 @@ import { Megaphone, Plus, Send, Users, CheckCircle2, Sparkles, BarChart2 } from 
 import { useApp } from '../context/useApp';
 import { Campaign } from '../types';
 import { Button } from '../components/ui/Button';
+import { BackButton } from '../components/layout/BackButton';
 import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
 import { Skeleton } from '../components/ui/Skeleton';
@@ -82,7 +83,7 @@ function CreateCampaignModal({ open, onClose }: { open: boolean; onClose: () => 
         </>
       ) : (
         <>
-          <Button variant="ghost" size="sm" onClick={() => setStep('template')}>Voltar</Button>
+          <BackButton onClick={() => setStep('template')} />
           <Button size="sm" onClick={handleCreate} loading={saving} disabled={!name.trim()}>Criar Campanha</Button>
         </>
       )}
@@ -195,64 +196,67 @@ export function Marketing() {
   }), [campaigns]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h2 className="text-[26px] font-extrabold text-zinc-50 tracking-tighter leading-none">Marketing</h2>
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-3">
+            <h2 className="text-[24px] font-extrabold text-zinc-50 tracking-tighter leading-none sm:text-[26px]">Marketing</h2>
+            <BackButton to="dashboard" />
+          </div>
           <p className="text-[13px] text-zinc-500 mt-2">Campanhas e comunicação em massa</p>
         </div>
-        <Button icon={<Plus size={14} />} onClick={() => setCreateOpen(true)}>Nova Campanha</Button>
+        <Button className="w-full justify-center sm:w-auto" icon={<Plus size={14} />} onClick={() => setCreateOpen(true)}>Nova Campanha</Button>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
         {[
           { label: 'Total de campanhas', value: stats.total, icon: <Megaphone size={16} />, color: 'from-teal-500/18 to-teal-600/8 text-teal-400' },
           { label: 'Campanhas enviadas', value: stats.sent, icon: <CheckCircle2 size={16} />, color: 'from-emerald-500/18 to-emerald-600/8 text-emerald-400' },
           { label: 'Alcance total', value: stats.totalReach, icon: <Users size={16} />, color: 'from-blue-500/18 to-blue-600/8 text-blue-400' },
           { label: 'Taxa de abertura', value: `${stats.avgOpen}%`, icon: <BarChart2 size={16} />, color: 'from-amber-500/18 to-amber-600/8 text-amber-400' },
         ].map(s => (
-          <div key={s.label} className="card-premium card-hover rounded-2xl p-4">
-            <div className={`p-2.5 rounded-xl bg-gradient-to-br ${s.color} border border-white/5 w-fit mb-3`}>{s.icon}</div>
-            <p className="text-[24px] font-extrabold text-zinc-50 tracking-tighter leading-none">{s.value}</p>
-            <p className="text-[11px] text-zinc-500 mt-1.5">{s.label}</p>
+          <div key={s.label} className="card-premium card-hover min-h-[112px] rounded-xl p-3.5 sm:min-h-[136px] sm:rounded-2xl sm:p-4">
+            <div className={`mb-2.5 w-fit rounded-lg bg-gradient-to-br p-2 ${s.color} border border-white/5 sm:mb-3 sm:rounded-xl sm:p-2.5`}>{s.icon}</div>
+            <p className="text-[20px] font-extrabold leading-none text-zinc-50 sm:text-[24px]">{s.value}</p>
+            <p className="mt-1.5 text-[10px] leading-snug text-zinc-500 sm:text-[11px]">{s.label}</p>
           </div>
         ))}
       </div>
 
       {/* Templates quick access */}
-      <div className="card-premium rounded-2xl p-5">
-        <div className="flex items-center gap-2.5 mb-4">
+      <div className="card-premium rounded-xl p-3.5 sm:rounded-2xl sm:p-5">
+        <div className="mb-4 flex items-center gap-2.5">
           <Sparkles size={15} className="text-teal-400" />
           <h3 className="text-[15px] font-bold text-zinc-100 tracking-tight">Templates de Campanha</h3>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
           {TEMPLATES.map(t => (
             <button
               key={t.id}
               onClick={() => setCreateOpen(true)}
-              className="flex flex-col items-center gap-2 p-3 rounded-xl text-center transition-all hover:scale-[1.03]"
+              className="flex min-h-[92px] flex-col items-center justify-center gap-2 rounded-xl p-2.5 text-center transition-all hover:scale-[1.03] sm:min-h-[108px] sm:p-3"
               style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}
             >
-              <span className="text-2xl">{t.icon}</span>
-              <span className="text-[10px] text-zinc-500 font-semibold leading-tight">{t.label}</span>
+              <span className="text-xl sm:text-2xl">{t.icon}</span>
+              <span className="text-[10px] font-semibold leading-tight text-zinc-500">{t.label}</span>
             </button>
           ))}
         </div>
       </div>
 
       {/* Campaign list */}
-      <div className="card-premium rounded-2xl overflow-hidden">
-        <div className="px-5 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+      <div className="card-premium overflow-hidden rounded-xl sm:rounded-2xl">
+        <div className="px-3.5 py-4 sm:px-5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
           <h3 className="text-[15px] font-bold text-zinc-100 tracking-tight">Histórico de Campanhas</h3>
           <p className="text-[12px] text-zinc-600 mt-0.5">{campaigns.length} campanhas criadas</p>
         </div>
 
         {loading ? (
-          <div className="p-5 space-y-3 fade-in">
+          <div className="p-3.5 space-y-3 fade-in sm:p-5">
             {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-4 py-2">
-                <Skeleton className="w-10 h-10 rounded-2xl" />
+              <div key={i} className="flex items-center gap-3 py-2 sm:gap-4">
+                <Skeleton className="w-10 h-10 rounded-xl sm:rounded-2xl" />
                 <div className="flex-1 space-y-2">
                   <Skeleton className="w-56 h-4" />
                   <Skeleton className="w-40 h-3" />
@@ -272,20 +276,22 @@ export function Marketing() {
             {campaigns.map((camp, i) => (
               <div
                 key={camp.id}
-                className="flex items-center gap-4 px-5 py-4 transition-colors"
+                className="flex flex-col gap-3 px-3.5 py-4 transition-colors sm:flex-row sm:items-center sm:gap-4 sm:px-5"
                 style={{ borderBottom: i < campaigns.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.02)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
               >
-                <div className="text-2xl flex-shrink-0">
-                  {TEMPLATES.find(t => t.id === camp.templateType)?.icon ?? '📣'}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[13px] font-semibold text-zinc-200 tracking-tight">{camp.name}</p>
-                  <p className="text-[11px] text-zinc-600 mt-0.5">{AUDIENCE_LABELS[camp.audience] ?? camp.audience} · {formatDate(camp.createdAt ?? '')}</p>
+                <div className="flex min-w-0 items-start gap-3">
+                  <div className="flex-shrink-0 text-xl sm:text-2xl">
+                    {TEMPLATES.find(t => t.id === camp.templateType)?.icon ?? '📣'}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-semibold tracking-tight text-zinc-200">{camp.name}</p>
+                    <p className="mt-0.5 line-clamp-2 text-[11px] text-zinc-600">{AUDIENCE_LABELS[camp.audience] ?? camp.audience} · {formatDate(camp.createdAt ?? '')}</p>
+                  </div>
                 </div>
                 {camp.status === 'sent' && (
-                  <div className="flex items-center gap-4 text-center flex-shrink-0">
+                  <div className="grid grid-cols-2 gap-2 rounded-xl bg-white/[0.025] p-2 text-center sm:flex sm:flex-shrink-0 sm:items-center sm:gap-4 sm:bg-transparent sm:p-0">
                     <div>
                       <p className="text-[14px] font-bold text-zinc-200">{camp.sentCount}</p>
                       <p className="text-[10px] text-zinc-600">enviados</p>
@@ -296,7 +302,7 @@ export function Marketing() {
                     </div>
                   </div>
                 )}
-                <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="flex flex-shrink-0 items-center justify-between gap-2 sm:justify-start">
                   <Badge variant={camp.status === 'sent' ? 'success' : camp.status === 'scheduled' ? 'info' : 'neutral'}>
                     {camp.status === 'sent' ? 'Enviada' : camp.status === 'scheduled' ? 'Agendada' : 'Rascunho'}
                   </Badge>

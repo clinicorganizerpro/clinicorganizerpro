@@ -1,10 +1,16 @@
 import { type FormEvent, type ReactNode, useMemo, useState } from 'react';
 import {
+  fetchTableRows,
+  insertRow as insertSupabaseRow,
+  deleteRow as deleteSupabaseRow,
+} from '../services/supabaseAdminService';
+import {
   BarChart3,
   Database,
   Layers3,
   Link2,
   LogOut,
+  MessageCircle,
   RefreshCw,
   Save,
   Settings2,
@@ -12,14 +18,21 @@ import {
   Trash2,
   Users,
   CircleUserRound,
+  X,
 } from 'lucide-react';
 import { Badge } from '../components/ui/Badge';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Modal } from '../components/ui/Modal';
 import { useApp } from '../context/useApp';
+import type { AppContextType } from '../context/AppContext';
+import type { AdminClinic, AdminIntegrationSettings, AdminPlan } from '../lib/adminStore';
 
 type AdminTab = 'usuarios' | 'planos' | 'relatorios' | 'integracoes' | 'dados-gerais';
+
+type SupabaseRow = Record<string, unknown> & {
+  id?: string | number;
+};
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('pt-BR', {
@@ -109,24 +122,33 @@ export default function AdminPanel() {
     refreshAdminData,
     integrationSettings,
     updateIntegrationSettings,
+    updateClinicProfile,
     updateAdminPlan,
     addAdminPlan,
-    updateAdminClinic,
     addAdminClinic,
+    updateAdminClinic,
     deleteAdminClinic,
     updateAdminLogin,
     addAdminLogin,
     deleteAdminLogin,
     signOut,
-  } = useApp();
+    showToast,
+  } = useApp() as AppContextType;
   const [activeTab, setActiveTab] = useState<AdminTab>('usuarios');
+  const [isBotBalloonOpen, setIsBotBalloonOpen] = useState(false);
+  const [supabaseTable, setSupabaseTable] = useState<string>('patients');
+  const [supabaseRows, setSupabaseRows] = useState<SupabaseRow[]>([]);
+  const [supabaseLoading, setSupabaseLoading] = useState(false);
+  const [supabaseError, setSupabaseError] = useState<string | null>(null);
+  const [supabaseInsertJson, setSupabaseInsertJson] = useState<string>('');
+  const [adminSaveMessage, setAdminSaveMessage] = useState<string | null>(null);
   const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
-  const planMap = useMemo(() => new Map(adminData.plans.map((plan) => [plan.id, plan])), [adminData.plans]);
+  const planMap = useMemo(() => new Map<string, AdminPlan>(adminData.plans.map((plan) => [plan.id, plan])), [adminData.plans]);
   const clinicMap = useMemo(
-    () => new Map(adminData.clinics.map((clinic) => [clinic.id, clinic])),
+    () => new Map<string, AdminClinic>(adminData.clinics.map((clinic) => [clinic.id, clinic])),
     [adminData.clinics],
   );
-  const selectedClinic = useMemo(
+  const selectedClinic = useMemo<AdminClinic | null>(
     () => (selectedClinicId ? adminData.clinics.find((clinic) => clinic.id === selectedClinicId) ?? null : null),
     [adminData.clinics, selectedClinicId],
   );
@@ -174,6 +196,7 @@ export default function AdminPanel() {
   ));
 
   const renderUsersTab = () => {
+    const adminLogin = adminData.logins.find((login) => login.role === 'admin') ?? adminData.logins[0] ?? null;
     const clinicLogins = selectedClinic
       ? adminData.logins.filter((login) => login.clinicId === selectedClinic.id)
       : [];
@@ -181,6 +204,77 @@ export default function AdminPanel() {
 
     return (
       <div className="space-y-6">
+        {adminLogin ? (
+          <Card className="border-white/5 bg-white/[0.03]">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-bold text-zinc-50">Administrador</h3>
+                <p className="mt-1 text-sm text-zinc-500">Altere o e-mail e a senha do usuário administrador.</p>
+              </div>
+              <Badge variant="teal" dot>
+                {adminLogin.email}
+              </Badge>
+            </div>
+
+            <form
+              className="mt-6 grid gap-3 md:grid-cols-2"
+              onSubmit={async (event: FormEvent<HTMLFormElement>) => {
+                event.preventDefault();
+                const formData = new FormData(event.currentTarget);
+
+                const newEmail = String(formData.get('adminEmail') ?? '').trim();
+                const newPassword = String(formData.get('adminPassword') ?? '').trim();
+
+                if (!adminLogin) return;
+
+                try {
+                  await updateAdminLogin(adminLogin.id, {
+                    email: newEmail || adminLogin.email,
+                    password: newPassword || undefined,
+                  });
+
+                  setAdminSaveMessage('Credenciais do administrador salvas.');
+                  setTimeout(() => setAdminSaveMessage(null), 3000);
+                } catch (error) {
+                  showToast?.(error instanceof Error ? error.message : 'Falha ao salvar credenciais.', 'error');
+                }
+              }}
+            >
+              <label className="grid gap-2">
+                <FieldLabel>E-mail do administrador</FieldLabel>
+                <input
+                  name="adminEmail"
+                  defaultValue={adminLogin.email}
+                  className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition focus:border-teal-400/50"
+                />
+              </label>
+
+              <label className="grid gap-2">
+                <FieldLabel>Senha</FieldLabel>
+                <input
+                  name="adminPassword"
+                  type="password"
+                  placeholder="Nova senha"
+                  className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition focus:border-teal-400/50"
+                />
+              </label>
+
+              <div className="md:col-span-2">
+                <div className="flex items-center gap-3">
+                  <button
+                    type="submit"
+                    className="inline-flex items-center gap-2 rounded-2xl bg-teal-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-400"
+                  >
+                    <Save size={16} />
+                    Salvar credenciais
+                  </button>
+                  {adminSaveMessage ? <p className="text-sm text-teal-300">{adminSaveMessage}</p> : null}
+                </div>
+              </div>
+            </form>
+          </Card>
+        ) : null}
+
         <Card className="border-white/5 bg-white/[0.03]">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -194,7 +288,7 @@ export default function AdminPanel() {
             </Badge>
           </div>
 
-          <div className="mt-6 grid gap-2 md:grid-cols-3 xl:grid-cols-5">
+          <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-2">
             {adminData.clinics.map((clinic) => {
               const clinicPlan = planMap.get(clinic.planId);
               const isSelected = selectedClinic?.id === clinic.id;
@@ -254,7 +348,7 @@ export default function AdminPanel() {
                 </Button>
               }
             >
-              <div className="grid gap-6 xl:grid-cols-2">
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
                 <Card className="border-white/5 bg-white/[0.03]">
                   <div className="flex items-start justify-between gap-4">
                     <div>
@@ -271,19 +365,25 @@ export default function AdminPanel() {
                   <form
                     key={selectedClinic.id}
                     className="mt-6 grid gap-3 md:grid-cols-2"
-                    onSubmit={(event: FormEvent<HTMLFormElement>) => {
+                    onSubmit={async (event: FormEvent<HTMLFormElement>) => {
                       event.preventDefault();
                       const formData = new FormData(event.currentTarget);
 
-                      updateAdminClinic(selectedClinic.id, {
-                        name: String(formData.get('name') ?? '').trim(),
-                        email: String(formData.get('email') ?? '').trim(),
-                        phone: String(formData.get('phone') ?? '').trim(),
-                        city: String(formData.get('city') ?? '').trim(),
-                        planId: String(formData.get('planId') ?? selectedClinic.planId),
-                        status: formData.get('status') === 'paused' ? 'paused' : 'active',
-                        notes: String(formData.get('notes') ?? '').trim(),
-                      });
+                      try {
+                        await updateAdminClinic(selectedClinic.id, {
+                          name: String(formData.get('name') ?? '').trim(),
+                          email: String(formData.get('email') ?? '').trim(),
+                          phone: String(formData.get('phone') ?? '').trim(),
+                          city: String(formData.get('city') ?? '').trim(),
+                          planId: String(formData.get('planId') ?? selectedClinic.planId),
+                          status: formData.get('status') === 'paused' ? 'paused' : 'active',
+                          notes: String(formData.get('notes') ?? '').trim(),
+                          accessPassword: String(formData.get('accessPassword') ?? '').trim(),
+                        });
+                        showToast?.('Unidade conectada ao frontend e login atualizado.', 'success');
+                      } catch (error) {
+                        showToast?.(error instanceof Error ? error.message : 'Falha ao salvar unidade.', 'error');
+                      }
                     }}
                   >
                     <label className="grid gap-2">
@@ -348,6 +448,16 @@ export default function AdminPanel() {
                         className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition focus:border-teal-400/50"
                       />
                     </label>
+                    <label className="grid gap-2 md:col-span-2">
+                      <FieldLabel>Senha de acesso da unidade</FieldLabel>
+                      <input
+                        name="accessPassword"
+                        type="password"
+                        defaultValue={selectedClinic.accessPassword ?? ''}
+                        placeholder="Defina a senha de login da clínica"
+                        className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-teal-400/50"
+                      />
+                    </label>
 
                     <div className="flex flex-wrap items-center gap-3 md:col-span-2">
                       <button
@@ -359,7 +469,16 @@ export default function AdminPanel() {
                       </button>
                       <button
                         type="button"
-                        onClick={() => deleteAdminClinic(selectedClinic.id)}
+                        onClick={() => {
+                          void deleteAdminClinic(selectedClinic.id)
+                            .then(() => {
+                              showToast?.('Unidade removida do admin e dos logins.', 'success');
+                              setSelectedClinicId(null);
+                            })
+                            .catch((error) => {
+                              showToast?.(error instanceof Error ? error.message : 'Falha ao excluir unidade.', 'error');
+                            });
+                        }}
                         className="inline-flex items-center gap-2 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-300 transition hover:bg-rose-500/20"
                       >
                         <Trash2 size={16} />
@@ -387,19 +506,25 @@ export default function AdminPanel() {
                       <form
                         key={login.id}
                         className="rounded-2xl border border-white/5 bg-black/20 p-5"
-                        onSubmit={(event: FormEvent<HTMLFormElement>) => {
+                        onSubmit={async (event: FormEvent<HTMLFormElement>) => {
                           event.preventDefault();
                           const formData = new FormData(event.currentTarget);
 
-                          updateAdminLogin(login.id, {
-                            name: String(formData.get('name') ?? '').trim(),
-                            email: String(formData.get('email') ?? '').trim(),
-                            clinicId: String(formData.get('clinicId') ?? login.clinicId),
-                            planId: String(formData.get('planId') ?? login.planId),
-                            role: String(formData.get('role') ?? login.role) as typeof login.role,
-                            status: formData.get('status') === 'suspended' ? 'suspended' : 'active',
-                            protected: formData.get('protected') === 'on',
-                          });
+                          try {
+                            await updateAdminLogin(login.id, {
+                              name: String(formData.get('name') ?? '').trim(),
+                              email: String(formData.get('email') ?? '').trim(),
+                              password: String(formData.get('password') ?? '').trim() || undefined,
+                              clinicId: String(formData.get('clinicId') ?? login.clinicId),
+                              planId: String(formData.get('planId') ?? login.planId),
+                              role: String(formData.get('role') ?? login.role) as typeof login.role,
+                              status: formData.get('status') === 'suspended' ? 'suspended' : 'active',
+                              protected: formData.get('protected') === 'on',
+                            });
+                            showToast?.('Login salvo no backend.', 'success');
+                          } catch (error) {
+                            showToast?.(error instanceof Error ? error.message : 'Falha ao salvar login.', 'error');
+                          }
                         }}
                       >
                         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -432,6 +557,15 @@ export default function AdminPanel() {
                             <input
                               name="email"
                               defaultValue={login.email}
+                              className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition focus:border-teal-400/50"
+                            />
+                          </label>
+                          <label className="grid gap-2">
+                            <FieldLabel>Senha</FieldLabel>
+                            <input
+                              name="password"
+                              type="password"
+                              defaultValue={login.password}
                               className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition focus:border-teal-400/50"
                             />
                           </label>
@@ -503,7 +637,11 @@ export default function AdminPanel() {
                           <button
                             type="button"
                             disabled={login.protected}
-                            onClick={() => deleteAdminLogin(login.id)}
+                            onClick={() => {
+                              void deleteAdminLogin(login.id).catch((error) => {
+                                showToast?.(error instanceof Error ? error.message : 'Falha ao excluir login.', 'error');
+                              });
+                            }}
                             className="inline-flex items-center gap-2 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-4 py-3 text-sm font-semibold text-rose-300 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             <Trash2 size={16} />
@@ -516,27 +654,41 @@ export default function AdminPanel() {
 
                   <form
                     className="mt-6 rounded-2xl border border-dashed border-teal-500/25 bg-teal-500/5 p-5"
-                    onSubmit={(event: FormEvent<HTMLFormElement>) => {
+                    onSubmit={async (event: FormEvent<HTMLFormElement>) => {
                       event.preventDefault();
                       const formData = new FormData(event.currentTarget);
 
-                      addAdminLogin({
-                        name: String(formData.get('name') ?? '').trim(),
-                        email: String(formData.get('email') ?? '').trim(),
-                        clinicId: String(formData.get('clinicId') ?? selectedClinic.id),
-                        planId: String(formData.get('planId') ?? selectedClinic.planId),
-                        role: String(formData.get('role') ?? 'reception') as
-                          | 'owner'
-                          | 'admin'
-                          | 'reception'
-                          | 'doctor'
-                          | 'finance'
-                          | 'support',
-                        status: formData.get('status') === 'suspended' ? 'suspended' : 'active',
-                        protected: formData.get('protected') === 'on',
-                      });
+                      const email = String(formData.get('email') ?? '').trim();
+                      const password = String(formData.get('password') ?? '').trim();
 
-                      event.currentTarget.reset();
+                      try {
+                        if (!email || !password) {
+                          showToast?.('Informe e-mail e senha para criar o login.', 'error');
+                          return;
+                        }
+
+                        await addAdminLogin({
+                          name: String(formData.get('name') ?? '').trim(),
+                          email,
+                          password,
+                          clinicId: String(formData.get('clinicId') ?? selectedClinic.id),
+                          planId: String(formData.get('planId') ?? selectedClinic.planId),
+                          role: String(formData.get('role') ?? 'reception') as
+                            | 'owner'
+                            | 'admin'
+                            | 'reception'
+                            | 'doctor'
+                            | 'finance'
+                            | 'support',
+                          status: formData.get('status') === 'suspended' ? 'suspended' : 'active',
+                          protected: formData.get('protected') === 'on',
+                        });
+
+                        showToast?.('Login criado no backend.', 'success');
+                        event.currentTarget.reset();
+                      } catch (error) {
+                        showToast?.(error instanceof Error ? error.message : 'Falha ao criar login.', 'error');
+                      }
                     }}
                   >
                     <h4 className="text-sm font-semibold text-zinc-100">Novo login</h4>
@@ -549,6 +701,12 @@ export default function AdminPanel() {
                       <input
                         name="email"
                         placeholder="E-mail"
+                        className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-teal-400/50"
+                      />
+                      <input
+                        name="password"
+                        type="password"
+                        placeholder="Senha"
                         className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-teal-400/50"
                       />
                       <select
@@ -622,21 +780,27 @@ export default function AdminPanel() {
 
           <form
             className="mt-6 grid gap-3 md:grid-cols-2"
-            onSubmit={(event: FormEvent<HTMLFormElement>) => {
+            onSubmit={async (event: FormEvent<HTMLFormElement>) => {
               event.preventDefault();
               const formData = new FormData(event.currentTarget);
 
-              addAdminClinic({
-                name: String(formData.get('name') ?? '').trim(),
-                email: String(formData.get('email') ?? '').trim(),
-                phone: String(formData.get('phone') ?? '').trim(),
-                city: String(formData.get('city') ?? '').trim(),
-                planId: String(formData.get('planId') ?? adminData.plans[0]?.id ?? ''),
-                notes: String(formData.get('notes') ?? '').trim(),
-                status: formData.get('status') === 'paused' ? 'paused' : 'active',
-              });
+              try {
+                await addAdminClinic({
+                  name: String(formData.get('name') ?? '').trim(),
+                  email: String(formData.get('email') ?? '').trim(),
+                  phone: String(formData.get('phone') ?? '').trim(),
+                  city: String(formData.get('city') ?? '').trim(),
+                  planId: String(formData.get('planId') ?? adminData.plans[0]?.id ?? ''),
+                  notes: String(formData.get('notes') ?? '').trim(),
+                  accessPassword: String(formData.get('accessPassword') ?? '').trim(),
+                  status: formData.get('status') === 'paused' ? 'paused' : 'active',
+                });
 
-              event.currentTarget.reset();
+                event.currentTarget.reset();
+                showToast?.('Clínica criada e login liberado no frontend.', 'success');
+              } catch (error) {
+                showToast?.(error instanceof Error ? error.message : 'Falha ao criar clínica.', 'error');
+              }
             }}
           >
             <input
@@ -680,6 +844,12 @@ export default function AdminPanel() {
               rows={3}
               className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-teal-400/50 md:col-span-2"
             />
+            <input
+              name="accessPassword"
+              type="password"
+              placeholder="Senha de acesso da clínica"
+              className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-teal-400/50 md:col-span-2"
+            />
             <button
               type="submit"
               className="inline-flex items-center gap-2 rounded-2xl bg-teal-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-400 md:col-span-2 md:w-fit"
@@ -708,7 +878,7 @@ export default function AdminPanel() {
           </Badge>
         </div>
 
-        <div className="mt-6 grid gap-4 lg:grid-cols-3">
+        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {adminData.plans.map((plan) => (
             <form
               key={plan.id}
@@ -813,6 +983,7 @@ export default function AdminPanel() {
               active: formData.get('active') === 'on',
             });
 
+            showToast?.('Novo plano adicionado com sucesso!', 'success');
             event.currentTarget.reset();
           }}
         >
@@ -898,7 +1069,7 @@ export default function AdminPanel() {
             </Badge>
           </div>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-3">
+          <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
             <MetricCard
               label="Receita mensal"
               value={formatCurrency(totalMonthlyRevenue)}
@@ -978,8 +1149,15 @@ export default function AdminPanel() {
   };
 
   const renderIntegrationsTab = () => {
-    const currentSettings =
+    const currentSettings: AdminIntegrationSettings =
       integrationSettings ?? {
+        clinicName: 'Clinic Organizer Pro',
+        clinicAddress: '',
+        clinicCity: '',
+        clinicEmail: '',
+        clinicPhone: '',
+        appName: 'Clinic Organizer Pro SaaS',
+        siteUrl: '',
         whatsappApiUrl: '',
         whatsappApiKey: '',
         whatsappEnabled: false,
@@ -995,18 +1173,83 @@ export default function AdminPanel() {
         supabaseUrl: '',
         supabaseAnonKey: '',
         supabaseEnabled: false,
-        googleClientId: '',
-        googleClientSecret: '',
-        googleEnabled: false,
-        hotmailClientId: '',
-        hotmailClientSecret: '',
-        hotmailEnabled: false,
         stripeSecretKey: '',
         stripePublishableKey: '',
         stripeWebhookSecret: '',
         stripeEnabled: false,
         updatedAt: '',
       };
+
+    async function handleFetchSupabase() {
+      setSupabaseLoading(true);
+      setSupabaseError(null);
+
+      const url = currentSettings.supabaseUrl;
+      const key = currentSettings.supabaseAnonKey;
+
+      if (!url || !key) {
+        setSupabaseError('Supabase não configurado. Salve as integrações antes de usar.');
+        setSupabaseLoading(false);
+        return;
+      }
+
+      try {
+        const data = (await fetchTableRows(url, key, supabaseTable || 'patients', 100)) as SupabaseRow[];
+        setSupabaseRows(data ?? []);
+      } catch (err) {
+        setSupabaseError(err instanceof Error ? err.message : String(err));
+      }
+
+      setSupabaseLoading(false);
+    }
+
+    async function handleInsertSupabase() {
+      setSupabaseLoading(true);
+      setSupabaseError(null);
+
+      const url = currentSettings.supabaseUrl;
+      const key = currentSettings.supabaseAnonKey;
+
+      if (!url || !key) {
+        setSupabaseError('Supabase não configurado. Salve as integrações antes de usar.');
+        setSupabaseLoading(false);
+        return;
+      }
+
+      try {
+        const payload = supabaseInsertJson ? JSON.parse(supabaseInsertJson) : {};
+        await insertSupabaseRow(url, key, supabaseTable || 'patients', payload);
+        await handleFetchSupabase();
+        setSupabaseInsertJson('');
+      } catch (err) {
+        setSupabaseError(err instanceof Error ? err.message : String(err));
+      }
+
+      setSupabaseLoading(false);
+    }
+
+    async function handleDeleteSupabase(id: string) {
+      setSupabaseLoading(true);
+      setSupabaseError(null);
+
+      const url = currentSettings.supabaseUrl;
+      const key = currentSettings.supabaseAnonKey;
+
+      if (!url || !key) {
+        setSupabaseError('Supabase não configurado. Salve as integrações antes de usar.');
+        setSupabaseLoading(false);
+        return;
+      }
+
+      try {
+        await deleteSupabaseRow(url, key, supabaseTable || 'patients', id);
+        await handleFetchSupabase();
+      } catch (err) {
+        setSupabaseError(err instanceof Error ? err.message : String(err));
+      }
+
+      setSupabaseLoading(false);
+    }
 
     return (
       <Card className="border-white/5 bg-white/[0.03]">
@@ -1041,12 +1284,6 @@ export default function AdminPanel() {
               aiApiKey: String(formData.get('aiApiKey') ?? '').trim(),
               aiModel: String(formData.get('aiModel') ?? '').trim(),
               aiEnabled: formData.get('aiEnabled') === 'on',
-              googleClientId: String(formData.get('googleClientId') ?? '').trim(),
-              googleClientSecret: String(formData.get('googleClientSecret') ?? '').trim(),
-              googleEnabled: formData.get('googleEnabled') === 'on',
-              hotmailClientId: String(formData.get('hotmailClientId') ?? '').trim(),
-              hotmailClientSecret: String(formData.get('hotmailClientSecret') ?? '').trim(),
-              hotmailEnabled: formData.get('hotmailEnabled') === 'on',
               stripeSecretKey: String(formData.get('stripeSecretKey') ?? '').trim(),
               stripePublishableKey: String(formData.get('stripePublishableKey') ?? '').trim(),
               stripeWebhookSecret: String(formData.get('stripeWebhookSecret') ?? '').trim(),
@@ -1095,6 +1332,85 @@ export default function AdminPanel() {
                   />
                   Habilitar WhatsApp API
                 </label>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-white/5 bg-black/20 p-4 xl:col-span-3">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h4 className="text-sm font-semibold text-zinc-100">Supabase (Admin)</h4>
+                  <p className="mt-1 text-xs text-zinc-500">Acesse tabelas diretamente via API REST do Supabase (PostgREST).</p>
+                </div>
+                <Badge variant={currentSettings.supabaseEnabled ? 'success' : 'warning'}>
+                  {currentSettings.supabaseEnabled ? 'Ativo' : 'Inativo'}
+                </Badge>
+              </div>
+
+              <div className="mt-4 grid gap-3">
+                <label className="grid gap-2">
+                  <FieldLabel>Tabela</FieldLabel>
+                  <input
+                    name="supabaseTable"
+                    value={supabaseTable}
+                    onChange={(e) => setSupabaseTable(e.target.value)}
+                    className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-teal-400/50"
+                  />
+                </label>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleFetchSupabase()}
+                    className="inline-flex items-center gap-2 rounded-2xl bg-teal-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-400"
+                  >
+                    <RefreshCw size={16} />
+                    Buscar linhas
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => void handleInsertSupabase()}
+                    className="inline-flex items-center gap-2 rounded-2xl border border-white/5 bg-white/5 px-4 py-3 text-sm font-semibold text-zinc-100 transition hover:bg-white/10"
+                  >
+                    <Save size={16} />
+                    Inserir JSON
+                  </button>
+                </div>
+
+                <label className="grid gap-2">
+                  <FieldLabel>JSON para inserção</FieldLabel>
+                  <textarea
+                    rows={4}
+                    value={supabaseInsertJson}
+                    onChange={(e) => setSupabaseInsertJson(e.target.value)}
+                    placeholder='Ex: {"name":"João", "phone":"(11) 99999-9999"}'
+                    className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-teal-400/50"
+                  />
+                </label>
+
+                {supabaseError ? <p className="text-sm text-rose-400">{supabaseError}</p> : null}
+
+                <div className="mt-2">
+                  <p className="text-xs text-zinc-500">Linhas (últimas {supabaseRows.length}):</p>
+                  <div className="mt-2 max-h-48 overflow-auto rounded-md border border-white/5 bg-black/10 p-2 text-xs">
+                    {supabaseLoading ? <p className="text-sm text-zinc-400">Carregando...</p> : null}
+                    {supabaseRows.length === 0 && !supabaseLoading ? <p className="text-sm text-zinc-500">Nenhuma linha.</p> : null}
+                    {supabaseRows.map((row) => (
+                      <div key={row.id ?? JSON.stringify(row)} className="mb-2 flex items-start justify-between gap-2">
+                        <pre className="whitespace-pre-wrap break-words text-xs text-zinc-300">{JSON.stringify(row, null, 2)}</pre>
+                        {row.id ? (
+                          <button
+                            onClick={() => void handleDeleteSupabase(String(row.id))}
+                            className="ml-2 inline-flex items-center gap-2 rounded-2xl border border-rose-500/20 bg-rose-500/10 px-2 py-1 text-xs font-semibold text-rose-300 transition hover:bg-rose-500/20"
+                          >
+                            <Trash2 size={14} />
+                            Excluir
+                          </button>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             </section>
 
@@ -1215,92 +1531,6 @@ export default function AdminPanel() {
               </div>
             </section>
 
-            <section className="rounded-2xl border border-white/5 bg-black/20 p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h4 className="text-sm font-semibold text-zinc-100">OAuth Google</h4>
-                  <p className="mt-1 text-xs text-zinc-500">Credenciais do login via Google.</p>
-                </div>
-                <Badge variant={currentSettings.googleEnabled ? 'success' : 'warning'}>
-                  {currentSettings.googleEnabled ? 'Ativo' : 'Inativo'}
-                </Badge>
-              </div>
-
-              <div className="mt-3 grid gap-3">
-                <label className="grid gap-2">
-                  <FieldLabel>Client ID</FieldLabel>
-                  <input
-                    name="googleClientId"
-                    defaultValue={currentSettings.googleClientId}
-                    placeholder="google-client-id"
-                    className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-teal-400/50"
-                  />
-                </label>
-                <label className="grid gap-2">
-                  <FieldLabel>Client Secret</FieldLabel>
-                  <input
-                    name="googleClientSecret"
-                    type="password"
-                    defaultValue={currentSettings.googleClientSecret}
-                    placeholder="••••••••"
-                    className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-teal-400/50"
-                  />
-                </label>
-                <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-200">
-                  <input
-                    name="googleEnabled"
-                    type="checkbox"
-                    defaultChecked={currentSettings.googleEnabled}
-                    className="h-4 w-4 rounded border-white/20 bg-transparent text-teal-500 focus:ring-teal-500"
-                  />
-                  Habilitar login com Google
-                </label>
-              </div>
-            </section>
-
-            <section className="rounded-2xl border border-white/5 bg-black/20 p-4">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h4 className="text-sm font-semibold text-zinc-100">OAuth Hotmail / Microsoft</h4>
-                  <p className="mt-1 text-xs text-zinc-500">Credenciais do login via Microsoft.</p>
-                </div>
-                <Badge variant={currentSettings.hotmailEnabled ? 'success' : 'warning'}>
-                  {currentSettings.hotmailEnabled ? 'Ativo' : 'Inativo'}
-                </Badge>
-              </div>
-
-              <div className="mt-3 grid gap-3">
-                <label className="grid gap-2">
-                  <FieldLabel>Client ID</FieldLabel>
-                  <input
-                    name="hotmailClientId"
-                    defaultValue={currentSettings.hotmailClientId}
-                    placeholder="hotmail-client-id"
-                    className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-teal-400/50"
-                  />
-                </label>
-                <label className="grid gap-2">
-                  <FieldLabel>Client Secret</FieldLabel>
-                  <input
-                    name="hotmailClientSecret"
-                    type="password"
-                    defaultValue={currentSettings.hotmailClientSecret}
-                    placeholder="••••••••"
-                    className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition placeholder:text-zinc-500 focus:border-teal-400/50"
-                  />
-                </label>
-                <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-200">
-                  <input
-                    name="hotmailEnabled"
-                    type="checkbox"
-                    defaultChecked={currentSettings.hotmailEnabled}
-                    className="h-4 w-4 rounded border-white/20 bg-transparent text-teal-500 focus:ring-teal-500"
-                  />
-                  Habilitar login com Hotmail / Microsoft
-                </label>
-              </div>
-            </section>
-
             <section className="rounded-2xl border border-white/5 bg-black/20 p-4 xl:col-span-2">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -1372,7 +1602,7 @@ export default function AdminPanel() {
     );
   };
 
-  const renderSummaryTab = () => {
+   const renderSummaryTab = () => {
     const planAssignments = adminData.plans.map((plan) => ({
       id: plan.id,
       name: plan.name,
@@ -1471,6 +1701,104 @@ export default function AdminPanel() {
         <Card className="border-white/5 bg-white/[0.03]">
           <div className="flex items-start justify-between gap-4">
             <div>
+              <h3 className="text-lg font-bold text-zinc-50">Perfil da Clínica</h3>
+              <p className="mt-1 text-sm text-zinc-500">
+                Dados principais e preferências operacionais.
+              </p>
+            </div>
+          </div>
+
+          <form
+            className="mt-6 grid gap-3"
+            onSubmit={(event: FormEvent<HTMLFormElement>) => {
+              event.preventDefault();
+              const formData = new FormData(event.currentTarget);
+
+              updateClinicProfile({
+                clinicName: String(formData.get('clinicName') ?? adminData.clinicProfile.clinicName).trim(),
+                responsibleName: String(formData.get('responsibleName') ?? '').trim(),
+                email: String(formData.get('email') ?? adminData.clinicProfile.email).trim(),
+                city: String(formData.get('city') ?? adminData.clinicProfile.city).trim(),
+                phone: String(formData.get('phone') ?? '').trim(),
+                cnpj: String(formData.get('cnpj') ?? '').trim(),
+                address: String(formData.get('address') ?? '').trim(),
+              });
+            }}
+          >
+            <label className="grid gap-2">
+              <FieldLabel>Nome da Clínica</FieldLabel>
+              <input
+                name="clinicName"
+                defaultValue={adminData.clinicProfile.clinicName}
+                className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition focus:border-teal-400/50"
+              />
+            </label>
+            <label className="grid gap-2">
+              <FieldLabel>Responsável</FieldLabel>
+              <input
+                name="responsibleName"
+                defaultValue={adminData.clinicProfile.responsibleName}
+                className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition focus:border-teal-400/50"
+              />
+            </label>
+            <label className="grid gap-2">
+              <FieldLabel>E-mail</FieldLabel>
+              <input
+                name="email"
+                type="email"
+                defaultValue={adminData.clinicProfile.email}
+                className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition focus:border-teal-400/50"
+              />
+            </label>
+            <label className="grid gap-2">
+              <FieldLabel>Cidade</FieldLabel>
+              <input
+                name="city"
+                defaultValue={adminData.clinicProfile.city}
+                className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition focus:border-teal-400/50"
+              />
+            </label>
+            <label className="grid gap-2">
+              <FieldLabel>Telefone</FieldLabel>
+              <input
+                name="phone"
+                defaultValue={adminData.clinicProfile.phone}
+                className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition focus:border-teal-400/50"
+              />
+            </label>
+            <label className="grid gap-2">
+              <FieldLabel>CNPJ</FieldLabel>
+              <input
+                name="cnpj"
+                defaultValue={adminData.clinicProfile.cnpj}
+                className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition focus:border-teal-400/50"
+              />
+            </label>
+            <label className="grid gap-2 md:col-span-2">
+              <FieldLabel>Endereço</FieldLabel>
+              <textarea
+                name="address"
+                rows={2}
+                defaultValue={adminData.clinicProfile.address}
+                className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-100 outline-none transition focus:border-teal-400/50"
+              />
+            </label>
+
+            <div className="flex items-center gap-3 md:col-span-2">
+              <button
+                type="submit"
+                className="inline-flex items-center gap-2 rounded-2xl bg-teal-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-400"
+              >
+                <Save size={16} />
+                Salvar dados da clínica
+              </button>
+            </div>
+          </form>
+        </Card>
+
+        <Card className="border-white/5 bg-white/[0.03] xl:col-span-3">
+          <div className="flex items-start justify-between gap-4">
+            <div>
               <h3 className="text-lg font-bold text-zinc-50">Conta admin</h3>
               <p className="mt-1 text-sm text-zinc-500">Sessão conectada e ações rápidas.</p>
             </div>
@@ -1541,7 +1869,7 @@ export default function AdminPanel() {
           </div>
         </div>
 
-        <div className="mt-8 grid gap-4 lg:grid-cols-4">
+        <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {metrics.map((metric) => (
             <MetricCard key={metric.label} {...metric} />
           ))}
@@ -1586,6 +1914,33 @@ export default function AdminPanel() {
       {activeTab === 'relatorios' ? renderReportsTab() : null}
       {activeTab === 'integracoes' ? renderIntegrationsTab() : null}
       {activeTab === 'dados-gerais' ? renderSummaryTab() : null}
+
+      {/* BotPlugin Balloon */}
+      <div className="fixed bottom-6 right-6 z-[99] flex flex-col items-end">
+        {isBotBalloonOpen ? (
+          <div className="mb-4 flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-zinc-900 shadow-2xl transition-all" style={{ width: '400px', height: '600px', maxWidth: 'calc(100vw - 48px)' }}>
+            <div className="flex items-center justify-between border-b border-white/5 bg-black/40 px-4 py-3">
+              <h3 className="text-sm font-semibold text-zinc-100">BotPlugin</h3>
+              <button onClick={() => setIsBotBalloonOpen(false)} className="text-zinc-400 hover:text-white transition">
+                <X size={20} />
+              </button>
+            </div>
+            <iframe 
+              src="https://app.botplugin.com.br/session/6a0d0b86ea28b62787d10f0b?tab=tab11" 
+              className="flex-1 w-full h-full bg-white"
+              title="BotPlugin Session"
+            />
+          </div>
+        ) : null}
+        
+        <button
+          type="button"
+          onClick={() => setIsBotBalloonOpen(!isBotBalloonOpen)}
+          className="flex h-14 w-14 items-center justify-center rounded-full bg-teal-500 text-white shadow-lg shadow-teal-500/20 transition-transform hover:scale-105"
+        >
+          {isBotBalloonOpen ? <X size={24} /> : <MessageCircle size={24} />}
+        </button>
+      </div>
     </div>
   );
 }

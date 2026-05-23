@@ -1,6 +1,15 @@
 import { useState } from 'react';
 
-export type PageId = 'dashboard' | 'agenda' | 'pacientes' | 'financeiro' | 'whatsapp' | 'marketing' | 'configuracoes';
+export type PageId =
+  | 'dashboard'
+  | 'agenda'
+  | 'pacientes'
+  | 'financeiro'
+  | 'planos'
+  | 'whatsapp'
+  | 'marketing'
+  | 'configuracoes'
+  | 'chatbot';
 
 export function useNavigation() {
   const [currentPage, setCurrentPage] = useState<PageId>('dashboard');

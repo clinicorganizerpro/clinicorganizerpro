@@ -10,10 +10,25 @@ export type Patient = {
   name: string;
   email: string;
   phone: string;
+  whatsapp?: string;
+  profilePhoto?: string;
   birthDate: string;
   cpf: string;
   sex: string;
-  address: string;
+  address: string; // Keeping for backward compatibility or full address string
+  zipCode?: string;
+  street?: string;
+  number?: string;
+  complement?: string;
+  neighborhood?: string;
+  city?: string;
+  state?: string;
+  emergencyContact?: string;
+  emergencyRelation?: string;
+  emergencyPhone?: string;
+  allergies?: string;
+  currentMedications?: string;
+  medicalHistory?: string;
   observations: string;
   lastVisit: string;
   nextAppointment?: string;
@@ -61,8 +76,57 @@ export type ProcedurePhoto = {
   photosBefore: string[];
   photosAfter: string[];
   videoUrl: string;
+  videosBefore?: string[];
+  videosAfter?: string[];
   observations: string;
   createdAt?: string;
+};
+
+export type FacialAssessment = {
+  skinType?: string;
+  fitzpatrick?: string;
+  acne?: string;
+  melasma?: boolean;
+  rosacea?: boolean;
+  sagging?: boolean;
+  fineLines?: boolean;
+  deepWrinkles?: boolean;
+  facialAsymmetry?: boolean;
+  doubleChin?: boolean;
+  facialVolumeLoss?: boolean;
+  skinQuality?: string;
+  sensitivity?: string;
+  scars?: boolean;
+  enlargedPores?: boolean;
+  oiliness?: string;
+  agingDegree?: string;
+};
+
+export type EstheticProcedureDetails = {
+  botox?: {
+    region?: string;
+    units?: string;
+    brand?: string;
+    followUp?: string;
+  };
+  pdoThreads?: {
+    threadType?: string;
+    quantity?: string;
+    region?: string;
+    objective?: string;
+  };
+  fullFace?: {
+    strategy?: string;
+    treatedAreas?: string;
+    productAmount?: string;
+  };
+  skinCleaning?: {
+    acneDegree?: string;
+    extractionPerformed?: string;
+    productsUsed?: string;
+    skinReaction?: string;
+  };
+  [key: string]: Record<string, string | undefined> | undefined;
 };
 
 export type Message = {
@@ -100,6 +164,7 @@ export type Transaction = {
   date: string;
   status: 'paid' | 'pending' | 'overdue';
   patient?: string;
+  procedure?: string;
 };
 
 export type Income = {
@@ -164,16 +229,50 @@ export type Anamnesis = {
     weight?: string;
   };
   observations: string;
+  facialAssessment?: FacialAssessment;
+  estheticProcedures?: string[];
+  procedureDetails?: EstheticProcedureDetails;
+  clinicalNotes?: string;
+  aestheticPhotosBefore?: string[];
+  aestheticPhotosAfter?: string[];
+  digitalSignature?: string;
+  signatureDate?: string;
   createdAt?: string;
 };
 
+export type NotificationPriority = 'low' | 'medium' | 'high' | 'urgent';
+
+export type NotificationCategory =
+  | 'appointment'
+  | 'patient'
+  | 'financial'
+  | 'reminder'
+  | 'system'
+  | 'update'
+  | 'security'
+  | 'sync'
+  | 'ai'
+  | 'marketing';
+
+export type NotificationType = 'event' | 'reminder' | 'system' | 'update' | 'alert' | 'sync';
+
 export type AppNotification = {
   id: string;
+  type: NotificationType;
+  category: NotificationCategory;
+
   title: string;
   message: string;
-  time: string;
+
+  createdAt: string;
   read: boolean;
-  type: 'appointment' | 'payment' | 'alert' | 'info';
+  priority: NotificationPriority;
+
+  relatedId?: string;
+  relatedType?: string;
+
+  actionUrl?: string;
+  icon?: string;
 };
 
 export type Toast = {

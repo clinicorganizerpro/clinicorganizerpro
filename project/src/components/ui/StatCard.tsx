@@ -43,35 +43,35 @@ const StatCardComponent = ({ title, value, change, icon, accentColor = 'teal', s
 
   return (
     <div
-      className="card-premium gradient-vivid-elegant layer-surface layer-elevated card-hover rounded-2xl p-5 relative overflow-hidden group"
+      className="card-premium gradient-vivid-elegant layer-surface layer-elevated card-hover relative min-h-[118px] overflow-hidden rounded-xl p-3.5 group sm:min-h-[148px] sm:rounded-2xl sm:p-5"
       style={{
         boxShadow: `0 1px 0 rgba(255,255,255,0.045) inset, 0 -1px 0 rgba(0,0,0,0.25) inset, 0 4px 28px rgba(0,0,0,0.42), 0 0 32px ${accent.glowColor}`,
       }}
     >
       {/* Ambient spot light */}
       <div
-        className="absolute top-0 right-0 w-36 h-36 pointer-events-none opacity-60"
+        className="absolute right-0 top-0 h-24 w-24 pointer-events-none opacity-45 sm:h-36 sm:w-36 sm:opacity-60"
         style={{
           background: `radial-gradient(ellipse at 85% 15%, ${accent.spotColor}, transparent 65%)`,
         }}
       />
       {/* Bottom left faint glow */}
       <div
-        className="absolute bottom-0 left-0 w-24 h-24 pointer-events-none opacity-20"
+        className="absolute bottom-0 left-0 h-16 w-16 pointer-events-none opacity-15 sm:h-24 sm:w-24 sm:opacity-20"
         style={{
           background: `radial-gradient(ellipse at 10% 90%, ${accent.spotColor}, transparent 70%)`,
         }}
       />
 
-      <div className="flex items-start justify-between mb-4 relative">
+      <div className="relative mb-3 flex items-start justify-between gap-2 sm:mb-4">
         <div
-          className={`p-2.5 rounded-xl bg-gradient-to-br ${accent.iconClass} border float-subtle`}
+          className={`rounded-lg bg-gradient-to-br p-2 ${accent.iconClass} border float-subtle sm:rounded-xl sm:p-2.5`}
           style={{ borderColor: accent.borderColor }}
         >
           {icon}
         </div>
         {change !== undefined && (
-          <div className={`flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg ${
+          <div className={`flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold sm:rounded-lg sm:px-2 sm:py-1 sm:text-[11px] ${
             isPositive
               ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/15'
               : 'bg-red-500/10 text-red-400 border border-red-500/15'
@@ -83,9 +83,9 @@ const StatCardComponent = ({ title, value, change, icon, accentColor = 'teal', s
       </div>
 
       <div className="relative">
-        <p className="text-[26px] font-extrabold text-zinc-50 leading-none tracking-tighter mb-1">{value}</p>
-        <p className="text-[12px] text-zinc-500 font-medium tracking-tight">{title}</p>
-        {subtitle && <p className="text-[11px] text-zinc-600 mt-1.5 font-medium">{subtitle}</p>}
+        <p className="mb-1 break-words text-[20px] font-extrabold leading-tight text-zinc-50 sm:text-[26px] sm:leading-none">{value}</p>
+        <p className="text-[11px] font-medium leading-snug text-zinc-500 sm:text-[12px]">{title}</p>
+        {subtitle && <p className="mt-1 text-[10px] font-medium leading-snug text-zinc-600 sm:mt-1.5 sm:text-[11px]">{subtitle}</p>}
       </div>
     </div>
   );

@@ -4,6 +4,10 @@ import { PageId } from '../hooks/useNavigation';
 interface LayoutContextType {
   currentPage: PageId;
   setCurrentPage: (page: PageId) => void;
+  // Navigate with optional params (e.g. { date: 'YYYY-MM-DD' })
+  navigate: (page: PageId, params?: Record<string, unknown> | null) => void;
+  // Parameters provided for the currently active page (or null)
+  pageParams: Record<string, unknown> | null;
   sidebarOpen: boolean;
   setSidebarOpen: (open: boolean) => void;
   desktopSidebarCollapsed: boolean;
@@ -22,6 +26,7 @@ export function LayoutProvider({ children }: LayoutProviderProps) {
   const [currentPage, setCurrentPage] = useState<PageId>('dashboard');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [desktopSidebarCollapsed, setDesktopSidebarCollapsed] = useState(false);
+  const [pageParams, setPageParams] = useState<Record<string, unknown> | null>(null);
 
   const toggleSidebar = useCallback(() => {
     setSidebarOpen((prev) => !prev);
@@ -36,9 +41,16 @@ export function LayoutProvider({ children }: LayoutProviderProps) {
     setSidebarOpen(false);
   }, []);
 
+  const navigate = useCallback((page: PageId, params?: Record<string, unknown> | null) => {
+    handleSetCurrentPage(page);
+    setPageParams(params ?? null);
+  }, [handleSetCurrentPage]);
+
   const value: LayoutContextType = {
     currentPage,
     setCurrentPage: handleSetCurrentPage,
+    navigate,
+    pageParams,
     sidebarOpen,
     setSidebarOpen,
     desktopSidebarCollapsed,

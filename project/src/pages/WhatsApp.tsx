@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { MessageCircle, Send, CheckCircle2, Clock, XCircle, Plus, Zap } from 'lucide-react';
 import { useApp } from '../context/useApp';
 import { Button } from '../components/ui/Button';
+import { BackButton } from '../components/layout/BackButton';
 import { Avatar } from '../components/ui/Avatar';
 import { Modal } from '../components/ui/Modal';
 import { Skeleton } from '../components/ui/Skeleton';
@@ -89,7 +90,6 @@ function SendMessageModal({ open, onClose }: { open: boolean; onClose: () => voi
         </>
       ) : (
         <>
-          <Button variant="ghost" size="sm" onClick={() => setStep('template')}>Voltar</Button>
           <Button size="sm" icon={<Send size={13} />} onClick={handleSend} loading={sending} disabled={selectedPatients.length === 0}>
             Enviar para {selectedPatients.length} paciente{selectedPatients.length !== 1 ? 's' : ''}
           </Button>
@@ -189,68 +189,73 @@ export function WhatsApp() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <h2 className="text-[26px] font-extrabold text-zinc-50 tracking-tighter leading-none">WhatsApp</h2>
+    <div className="space-y-4 sm:space-y-6 relative">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+        <div className="min-w-0">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            <h2 className="text-[24px] font-extrabold text-zinc-50 tracking-tighter leading-none sm:text-[26px]">WhatsApp</h2>
+            <div className="w-fit">
+              <BackButton to="dashboard" />
+            </div>
+          </div>
           <p className="text-[13px] text-zinc-500 mt-2">Mensagens automáticas e comunicação com pacientes</p>
         </div>
-        <Button icon={<Plus size={14} />} onClick={() => setSendOpen(true)}>Nova Mensagem</Button>
+        <Button className="w-full justify-center sm:w-auto" icon={<Plus size={14} />} onClick={() => setSendOpen(true)}>Nova Mensagem</Button>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 sm:gap-4">
         {[
           { label: 'Total enviadas', value: stats.total, icon: <MessageCircle size={16} />, color: 'from-teal-500/18 to-teal-600/8 text-teal-400' },
           { label: 'Entregues', value: stats.sent, icon: <CheckCircle2 size={16} />, color: 'from-emerald-500/18 to-emerald-600/8 text-emerald-400' },
           { label: 'Pendentes', value: stats.pending, icon: <Clock size={16} />, color: 'from-amber-500/18 to-amber-600/8 text-amber-400' },
           { label: 'Falhas', value: stats.failed, icon: <XCircle size={16} />, color: 'from-red-500/18 to-red-600/8 text-red-400' },
         ].map(s => (
-          <div key={s.label} className="card-premium card-hover rounded-2xl p-4">
-            <div className={`p-2.5 rounded-xl bg-gradient-to-br ${s.color} border border-white/5 w-fit mb-3`}>{s.icon}</div>
-            <p className="text-[24px] font-extrabold text-zinc-50 tracking-tighter leading-none">{s.value}</p>
-            <p className="text-[11px] text-zinc-500 mt-1.5">{s.label}</p>
+          <div key={s.label} className="card-premium card-hover min-h-[112px] rounded-xl p-3.5 sm:min-h-[136px] sm:rounded-2xl sm:p-4">
+            <div className={`mb-2.5 w-fit rounded-lg bg-gradient-to-br p-2 ${s.color} border border-white/5 sm:mb-3 sm:rounded-xl sm:p-2.5`}>{s.icon}</div>
+            <p className="text-[20px] font-extrabold leading-none text-zinc-50 sm:text-[24px]">{s.value}</p>
+            <p className="mt-1.5 text-[10px] leading-snug text-zinc-500 sm:text-[11px]">{s.label}</p>
           </div>
         ))}
       </div>
 
       {/* Templates quick-send */}
-      <div className="card-premium rounded-2xl p-5">
-        <div className="flex items-center justify-between mb-4">
+      <div className="card-premium rounded-xl p-3.5 sm:rounded-2xl sm:p-5">
+        <div className="mb-4 flex items-center justify-between gap-3">
           <div>
             <h3 className="text-[15px] font-bold text-zinc-100 tracking-tight">Templates Rápidos</h3>
             <p className="text-[12px] text-zinc-600 mt-0.5">Envie mensagens predefinidas com um clique</p>
           </div>
           <Zap size={16} className="text-amber-400" />
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
           {TEMPLATES.map(t => (
             <button
               key={t.id}
               onClick={() => setSendOpen(true)}
-              className="flex flex-col items-center gap-2 p-3 rounded-xl text-center transition-all hover:scale-[1.03]"
+              className="flex min-h-[94px] flex-col items-center justify-center gap-2 rounded-xl p-2.5 text-center transition-all hover:scale-[1.03] sm:min-h-[108px] sm:p-3"
               style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)' }}
             >
-              <span className="text-2xl">{t.icon}</span>
-              <span className="text-[11px] text-zinc-400 font-medium leading-tight">{t.label}</span>
+              <span className="text-xl sm:text-2xl">{t.icon}</span>
+              <span className="text-[10px] font-medium leading-tight text-zinc-400 sm:text-[11px]">{t.label}</span>
             </button>
           ))}
         </div>
       </div>
 
       {/* Messages log */}
-      <div className="card-premium rounded-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+      <div className="card-premium overflow-hidden rounded-xl sm:rounded-2xl">
+        <div className="flex flex-col gap-3 px-3.5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5" style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
           <div>
             <h3 className="text-[15px] font-bold text-zinc-100 tracking-tight">Histórico de Mensagens</h3>
             <p className="text-[12px] text-zinc-600 mt-0.5">{filtered.length} registros</p>
           </div>
-          <div className="flex gap-1 p-1 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+          <div className="grid grid-cols-2 gap-1 rounded-xl p-1 sm:flex" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
             {(['all', 'sent', 'pending', 'failed'] as const).map(f => (
               <button
                 key={f}
                 onClick={() => setFilterStatus(f)}
-                className="px-3 py-1 rounded-lg text-[11px] font-semibold transition-all"
+                className="rounded-lg px-2 py-1 text-[10px] font-semibold transition-all sm:px-3 sm:text-[11px]"
                 style={filterStatus === f ? {
                   background: 'linear-gradient(135deg, rgba(20,184,166,0.15), rgba(13,148,136,0.08))',
                   border: '1px solid rgba(20,184,166,0.25)', color: '#5eead4',
@@ -263,7 +268,7 @@ export function WhatsApp() {
         </div>
 
         {loading ? (
-          <div className="p-5 space-y-3 fade-in">
+          <div className="p-3.5 space-y-3 fade-in sm:p-5">
             {Array.from({ length: 5 }).map((_, i) => (
               <div key={i} className="flex items-center gap-4 py-2">
                 <Skeleton className="w-9 h-9 rounded-full" />
@@ -282,21 +287,23 @@ export function WhatsApp() {
             <p className="text-[12px] text-zinc-700 mt-1">Clique em "Nova Mensagem" para começar</p>
           </div>
         ) : (
-          <div>
+          <div className="divide-y divide-white/[0.04]">
             {filtered.map((msg, i) => (
               <div
                 key={msg.id}
-                className="flex items-center gap-4 px-5 py-3.5 transition-colors"
+                className="flex flex-col gap-3 px-3.5 py-3.5 transition-colors sm:flex-row sm:items-center sm:gap-4 sm:px-5"
                 style={{ borderBottom: i < filtered.length - 1 ? '1px solid rgba(255,255,255,0.04)' : 'none' }}
                 onMouseEnter={e => (e.currentTarget.style.background = 'rgba(255,255,255,0.02)')}
                 onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
               >
-                <Avatar name={msg.patientName} size="sm" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-[13px] font-semibold text-zinc-200 tracking-tight">{msg.patientName}</p>
-                  <p className="text-[11px] text-zinc-500 truncate mt-0.5">{msg.message}</p>
+                <div className="flex min-w-0 items-start gap-3">
+                  <Avatar name={msg.patientName} size="sm" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[13px] font-semibold tracking-tight text-zinc-200">{msg.patientName}</p>
+                    <p className="mt-0.5 line-clamp-2 text-[11px] text-zinc-500 sm:truncate">{msg.message}</p>
+                  </div>
                 </div>
-                <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="flex flex-shrink-0 items-center justify-between gap-2 pl-11 sm:justify-start sm:pl-0">
                   {statusIcon[msg.status]}
                   <span className="text-[11px] text-zinc-600">{formatTime(msg.sentAt ?? msg.createdAt ?? '')}</span>
                 </div>

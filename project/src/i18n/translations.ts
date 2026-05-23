@@ -21,7 +21,7 @@ export const translations = {
     cancel: 'Cancelar',
   },
   sidebar: {
-    dashboard: 'Dashboard',
+    dashboard: 'Painel',
     agenda: 'Agenda',
     patients: 'Pacientes',
     financial: 'Financeiro',
@@ -42,7 +42,7 @@ export const translations = {
   },
   pages: {
     dashboard: {
-      title: 'Dashboard',
+      title: 'Painel',
       subtitle: 'Visão geral da clínica',
       greetingMorning: 'Bom dia',
       greetingAfternoon: 'Boa tarde',
@@ -50,7 +50,7 @@ export const translations = {
       readyMessage:
         'Sistema pronto para começar. Todos os recursos estão disponíveis no menu lateral:',
       readyMessageHighlight:
-        'Dashboard, Agenda, Pacientes, Financeiro, WhatsApp, Marketing e Configurações',
+        'Painel, Agenda, Pacientes, Financeiro, WhatsApp, Marketing e Configurações',
       totalPatients: 'Total de Pacientes',
       clickPatientsToAdd: "Clique em 'Pacientes' para adicionar",
       appointmentsToday: 'Consultas Hoje',

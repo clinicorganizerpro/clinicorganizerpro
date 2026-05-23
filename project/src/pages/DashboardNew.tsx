@@ -50,7 +50,7 @@ export function Dashboard({ onQuickActionNavigate }: DashboardProps) {
 
   const containerClass = isDark ? 'text-white' : 'text-slate-900';
   const panelClass = isDark
-    ? 'border border-white/[0.05] bg-[radial-gradient(circle_at_top_left,rgba(45,212,191,0.08),transparent_28%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.07),transparent_26%),linear-gradient(180deg,rgba(10,12,18,0.98),rgba(8,10,15,0.98))] shadow-[0_0_0_1px_rgba(255,255,255,0.02)_inset]'
+    ? 'border border-white/[0.05] bg-zinc-950 shadow-[0_0_0_1px_rgba(255,255,255,0.02)_inset]'
     : 'border border-slate-200 bg-white shadow-sm';
   const softTextClass = isDark ? 'text-zinc-400' : 'text-slate-500';
   const mutedTextClass = isDark ? 'text-zinc-500' : 'text-slate-400';
@@ -72,7 +72,8 @@ export function Dashboard({ onQuickActionNavigate }: DashboardProps) {
   ];
 
   const totalWeeklyAppointments = weeklyData.reduce((sum, item) => sum + item.value, 0);
-  const weeklyAverageOccupancy = totalWeeklyAppointments === 0 ? 0 : Math.round(totalWeeklyAppointments / weeklyData.length);
+  const weeklyAverageOccupancy =
+    totalWeeklyAppointments === 0 ? 0 : Math.round(totalWeeklyAppointments / weeklyData.length);
   const peakDay = weeklyData.find((item) => item.value === Math.max(...weeklyData.map((d) => d.value)));
 
   const stats = [
@@ -130,21 +131,21 @@ export function Dashboard({ onQuickActionNavigate }: DashboardProps) {
     {
       label: 'Receitas',
       value: 'R$ 0,00',
-      barClass: 'bg-gradient-to-r from-emerald-400 to-teal-400',
+      barClass: 'bg-emerald-400',
       textClass: isDark ? 'text-emerald-400' : 'text-emerald-600',
       width: '0%',
     },
     {
       label: 'Despesas',
       value: 'R$ 0,00',
-      barClass: 'bg-gradient-to-r from-pink-500 to-rose-500',
+      barClass: 'bg-rose-500',
       textClass: isDark ? 'text-rose-400' : 'text-rose-600',
       width: '0%',
     },
     {
       label: 'Pendentes',
       value: 'R$ 0,00',
-      barClass: 'bg-gradient-to-r from-amber-400 to-yellow-500',
+      barClass: 'bg-amber-400',
       textClass: isDark ? 'text-amber-400' : 'text-amber-600',
       width: '0%',
     },
@@ -188,7 +189,7 @@ export function Dashboard({ onQuickActionNavigate }: DashboardProps) {
               className={`group relative flex min-h-[108px] flex-col overflow-hidden rounded-xl border p-2.5 text-left transition duration-200 hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-cyan-400/60 md:p-3 ${panelClass}`}
               aria-label={stat.actionLabel}
             >
-              <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${stat.glowClass}`} />
+              <div className={`pointer-events-none absolute inset-0 bg-emerald-400/5`} />
               <div className="relative flex items-start justify-between gap-1.5">
                 <div className={`rounded-lg p-1.5 ${stat.iconWrap}`}>
                   <Icon className="h-3.5 w-3.5" />
@@ -230,24 +231,18 @@ export function Dashboard({ onQuickActionNavigate }: DashboardProps) {
                     {item.value > 0 ? (
                       <div className="h-full w-full max-w-[92px] rounded-[18px] bg-transparent">
                         <div
-                          className="mx-auto rounded-[14px] bg-gradient-to-b from-cyan-300 to-teal-500 shadow-[0_0_32px_rgba(45,212,191,0.45)]"
+                          className="mx-auto rounded-[14px] bg-cyan-300 shadow-[0_0_32px_rgba(45,212,191,0.35)]"
                           style={{ height: `${item.value}%`, width: '72px' }}
                         />
                       </div>
                     ) : (
                       <div
-                        className={`w-full max-w-[72px] rounded-[14px] ${
-                          isDark ? 'bg-white/[0.03]' : 'bg-slate-100'
-                        }`}
+                        className={`w-full max-w-[72px] rounded-[14px] ${isDark ? 'bg-white/[0.03]' : 'bg-slate-100'}`}
                         style={{ height: '10%' }}
                       />
                     )}
                   </div>
-                  <span
-                    className={`text-sm font-semibold ${
-                      item.active ? 'text-cyan-300' : softTextClass
-                    }`}
-                  >
+                  <span className={`text-sm font-semibold ${item.active ? 'text-cyan-300' : softTextClass}`}>
                     {item.day}
                   </span>
                 </div>
@@ -270,10 +265,7 @@ export function Dashboard({ onQuickActionNavigate }: DashboardProps) {
               <p className={`mt-1 text-sm ${softTextClass}`}>Abril 2024</p>
             </div>
 
-            <button
-              type="button"
-              className="text-sm font-semibold text-cyan-300 transition hover:text-cyan-200"
-            >
+            <button type="button" className="text-sm font-semibold text-cyan-300 transition hover:text-cyan-200">
               Ver ↗
             </button>
           </div>
@@ -287,10 +279,7 @@ export function Dashboard({ onQuickActionNavigate }: DashboardProps) {
                 </div>
 
                 <div className={`h-2 rounded-full ${isDark ? 'bg-white/[0.05]' : 'bg-slate-100'}`}>
-                  <div
-                    className={`h-2 rounded-full ${item.barClass}`}
-                    style={{ width: item.width }}
-                  />
+                  <div className={`h-2 rounded-full ${item.barClass}`} style={{ width: item.width }} />
                 </div>
               </div>
             ))}
@@ -353,10 +342,7 @@ export function Dashboard({ onQuickActionNavigate }: DashboardProps) {
                 <div key={item.day} className="grid grid-cols-[120px_1fr_110px] items-center gap-3">
                   <span className="text-sm font-semibold">{item.fullDay}</span>
                   <div className={`h-2 rounded-full ${isDark ? 'bg-white/[0.06]' : 'bg-slate-200'}`}>
-                    <div
-                      className="h-2 rounded-full bg-gradient-to-r from-cyan-300 to-teal-500"
-                      style={{ width: `${item.value}%` }}
-                    />
+                    <div className="h-2 rounded-full bg-cyan-300" style={{ width: `${item.value}%` }} />
                   </div>
                   <span className={`text-right text-sm ${softTextClass}`}>{item.value} consultas</span>
                 </div>

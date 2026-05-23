@@ -50,6 +50,8 @@ export interface ProcedurePhoto {
   photosBefore: string[];
   photosAfter: string[];
   videoUrl: string;
+  videosBefore?: string[];
+  videosAfter?: string[];
   observations: string;
   createdAt: string;
 }

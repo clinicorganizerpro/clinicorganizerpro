@@ -1,0 +1,20 @@
+{
+  "name": "clinic-organizer-pro-saas",
+  "private": true,
+  "scripts": {
+    "dev": "npm --prefix project run dev",
+    "build": "npm --prefix project run build",
+    "start": "npm --prefix project run start",
+    "lint": "npm --prefix project run lint",
+    "preview": "npm --prefix project run preview",
+    "typecheck": "npm --prefix project run typecheck",
+    "dev:api": "npm --prefix project run dev:api",
+    "build:api": "npm --prefix project run build:api",
+    "start:api": "npm --prefix project run start:api",
+    "local-api": "npm --prefix project run local-api"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.10.3",
+    "@supabase/supabase-js": "^2.106.1"
+  }
+}
