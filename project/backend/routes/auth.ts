@@ -57,6 +57,8 @@ const getSupabaseServiceKey = () =>
   readEnv('SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_KEY');
 const getSupabaseAnonKey = () =>
   readEnv('SUPABASE_ANON_KEY', 'VITE_SUPABASE_ANON_KEY', 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY');
+const getAdminLoginEmail = () => readEnv('ADMIN_LOGIN_EMAIL') || 'clinicorganizerpro@gmail.com';
+const getAdminLoginPassword = () => readEnv('ADMIN_LOGIN_PASSWORD', 'ADMIN_PASSWORD');
 
 let cachedSupabaseAdmin: SupabaseClient | null = null;
 let cachedSupabaseAuth: SupabaseClient | null = null;
@@ -186,7 +188,7 @@ authRouter.post('/login', async (req, res) => {
     return res.status(400).json({ data: null, error: { message: 'Missing email/password' } });
   }
 
-  const adminLoginEmail = (process.env.ADMIN_LOGIN_EMAIL ?? 'clinicorganizerpro@gmail.com').trim().toLowerCase();
+  const adminLoginEmail = getAdminLoginEmail().trim().toLowerCase();
   let user = await findUserByEmail(email);
 
   if (hasSupabaseAuthConfig()) {
@@ -202,12 +204,23 @@ authRouter.post('/login', async (req, res) => {
     if (error || !data.user) {
       const fallbackUser = email === adminLoginEmail ? user ?? (await findLocalUserByEmail(email)) : null;
       const localPasswordOk = fallbackUser ? await bcrypt.compare(password, fallbackUser.passwordHash) : false;
+      const envAdminPassword = email === adminLoginEmail ? getAdminLoginPassword() : '';
+      const envAdminPasswordOk = Boolean(envAdminPassword && password === envAdminPassword);
 
-      if (!localPasswordOk) {
+      if (!localPasswordOk && !envAdminPasswordOk) {
         return res.status(401).json({ data: null, error: { message: 'Invalid credentials' } });
       }
 
-      user = fallbackUser;
+      user =
+        fallbackUser ??
+        ({
+          id: `admin_${Buffer.from(adminLoginEmail).toString('base64url')}`,
+          email: adminLoginEmail,
+          passwordHash: await bcrypt.hash(password, 10),
+          role: 'admin',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        } satisfies NonNullable<typeof user>);
     } else {
       let clinicId: string | undefined;
 
