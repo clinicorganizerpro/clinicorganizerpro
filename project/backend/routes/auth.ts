@@ -219,11 +219,19 @@ const ensureEnvAdminSupabaseUser = async (email: string, password: string) => {
   let clinicId = typeof existingClinic?.id === 'string' ? existingClinic.id : '';
 
   if (!clinicId) {
+    const { data: plan } = await supabaseAdmin
+      .from('subscription_plans')
+      .select('id')
+      .eq('active', true)
+      .order('monthly_price', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
     const { data: clinic } = await supabaseAdmin
       .from('clinics')
       .insert({
         user_id: authUser.id,
-        plan_id: 'plan-pro',
+        plan_id: typeof plan?.id === 'string' ? plan.id : null,
         name: 'Clinic Organizer Pro',
         email,
         status: 'active',

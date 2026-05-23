@@ -95,7 +95,7 @@ import {
 } from '../lib/patientClinicalStorage';
 import { HAS_SUPABASE_CONFIG } from '../config/supabase';
 import { getCurrentSession, supabase } from '../lib/supabase';
-import { localApiList } from '../lib/localApiClient';
+import { localApiCreate, localApiDelete, localApiList, localApiUpdate } from '../lib/localApiClient';
 import { apiRequest } from '../lib/api';
 import { getCurrentClinicId as getSupabaseClinicId } from '../services/supabaseCrudService';
 import {
@@ -1029,7 +1029,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
 
         if (HAS_SUPABASE_CONFIG) {
-          return null;
+          try {
+            const fallbackPayload = prepareRecordForDatabase(resolvedTable, payload, user.id, user.id);
+            const created = await localApiCreate<{ id: string } & AnyRecord>(
+              dbTable,
+              fallbackPayload as Omit<{ id: string } & AnyRecord, 'id'> & Partial<Pick<{ id: string } & AnyRecord, 'id'>>,
+            );
+            await refreshAllRecords();
+            showToast('Registro salvo no backend.', 'success');
+            return mapRecordForState(resolvedTable, created as AnyRecord);
+          } catch (fallbackError) {
+            console.error(`Failed backend fallback insert into ${dbTable}:`, fallbackError);
+            showToast('Não foi possível salvar no backend de produção.', 'error');
+            return null;
+          }
         }
 
         const recoveryTable = table;
@@ -1312,7 +1325,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
 
         if (HAS_SUPABASE_CONFIG) {
-          return null;
+          try {
+            const fallbackPayload = prepareRecordForDatabase(resolvedTable, payload, user.id, user.id);
+            const updated = await localApiUpdate<{ id: string } & AnyRecord>(
+              dbTable,
+              id,
+              fallbackPayload as Omit<{ id: string } & AnyRecord, 'id'> & Partial<Pick<{ id: string } & AnyRecord, 'id'>>,
+            );
+            await refreshAllRecords();
+            showToast('Registro atualizado no backend.', 'success');
+            return mapRecordForState(resolvedTable, updated as AnyRecord);
+          } catch (fallbackError) {
+            console.error(`Failed backend fallback update ${dbTable}:`, fallbackError);
+            showToast('Não foi possível atualizar no backend de produção.', 'error');
+            return null;
+          }
         }
 
         const recoveryTable = table;
@@ -1459,6 +1486,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (error) {
         console.error(`Failed to delete from ${dbTable}:`, error.message);
         showToast(`Falha ao remover ${dbTable}: ${error.message}`, 'error');
+
+        if (HAS_SUPABASE_CONFIG) {
+          try {
+            await localApiDelete(dbTable, id);
+            await refreshAllRecords();
+            showToast('Registro removido no backend.', 'success');
+            return true;
+          } catch (fallbackError) {
+            console.error(`Failed backend fallback delete from ${dbTable}:`, fallbackError);
+          }
+        }
+
         return false;
       }
 
