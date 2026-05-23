@@ -1,6 +1,7 @@
 import Stripe from 'stripe';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { getStripeConfig } from './configStore.js';
+import { readEnv, readSupabaseServiceKey, readSupabaseUrl } from '../utils/supabaseEnv.js';
 
 type BillingPlanKey = 'essencial' | 'pro' | 'clinic';
 
@@ -16,18 +17,8 @@ export type BillingSubscription = {
   trialEndsAt: string | null;
 };
 
-const readEnv = (...names: string[]) => {
-  for (const name of names) {
-    const value = process.env[name]?.trim();
-    if (value) return value;
-  }
-
-  return '';
-};
-
-const getSupabaseUrl = () => readEnv('SUPABASE_URL', 'VITE_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL');
-const getSupabaseServiceKey = () =>
-  readEnv('SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_KEY');
+const getSupabaseUrl = readSupabaseUrl;
+const getSupabaseServiceKey = readSupabaseServiceKey;
 
 let cachedSupabaseAdmin: SupabaseClient | null = null;
 let cachedStripe: Stripe | null = null;

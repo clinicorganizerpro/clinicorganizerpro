@@ -10,6 +10,7 @@ import {
   type UserRole,
 } from '../services/authStore.js';
 import { requireAuth } from '../middlewares/auth.js';
+import { readEnv, readSupabaseAnonKey, readSupabaseServiceKey, readSupabaseUrl } from '../utils/supabaseEnv.js';
 
 const authRouter = Router();
 
@@ -43,20 +44,9 @@ const getRefreshSecret = () =>
 const ACCESS_TTL_SECONDS = Number(process.env.ACCESS_TTL_SECONDS ?? 60 * 15); // 15min
 const REFRESH_TTL_SECONDS = Number(process.env.REFRESH_TTL_SECONDS ?? 60 * 60 * 24 * 7); // 7d
 
-const readEnv = (...names: string[]) => {
-  for (const name of names) {
-    const value = process.env[name]?.trim();
-    if (value) return value;
-  }
-
-  return '';
-};
-
-const getSupabaseUrl = () => readEnv('SUPABASE_URL', 'VITE_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL');
-const getSupabaseServiceKey = () =>
-  readEnv('SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_KEY');
-const getSupabaseAnonKey = () =>
-  readEnv('SUPABASE_ANON_KEY', 'VITE_SUPABASE_ANON_KEY', 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY');
+const getSupabaseUrl = readSupabaseUrl;
+const getSupabaseServiceKey = readSupabaseServiceKey;
+const getSupabaseAnonKey = readSupabaseAnonKey;
 const getAdminLoginEmail = () => readEnv('ADMIN_LOGIN_EMAIL') || 'clinicorganizerpro@gmail.com';
 const getAdminLoginPassword = () => readEnv('ADMIN_LOGIN_PASSWORD', 'ADMIN_PASSWORD');
 
@@ -260,6 +250,15 @@ const ensureEnvAdminSupabaseUser = async (email: string, password: string) => {
   };
 };
 
+const safelyEnsureEnvAdminSupabaseUser = async (email: string, password: string) => {
+  try {
+    return await ensureEnvAdminSupabaseUser(email, password);
+  } catch (error) {
+    console.error('[auth] Failed to ensure env admin in Supabase', error);
+    return null;
+  }
+};
+
 const loadClinicProfile = async (clinicId?: string): Promise<ClinicAuthProfile | null> => {
   if (!clinicId) return null;
 
@@ -290,7 +289,10 @@ authRouter.post('/login', async (req, res) => {
   }
 
   const adminLoginEmail = getAdminLoginEmail().trim().toLowerCase();
-  let user = await findUserByEmail(email);
+  let user = await findUserByEmail(email).catch((error) => {
+    console.error('[auth] Failed to load user profile before login', error);
+    return null;
+  });
 
   if (hasSupabaseAuthConfig()) {
     const supabaseAuth = getSupabaseAuth();
@@ -300,7 +302,12 @@ authRouter.post('/login', async (req, res) => {
       return res.status(503).json({ data: null, error: { message: 'API indisponível: Supabase Auth não configurado.' } });
     }
 
-    const { data, error } = await supabaseAuth.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabaseAuth.auth
+      .signInWithPassword({ email, password })
+      .catch((loginError) => {
+        console.error('[auth] Supabase password login failed unexpectedly', loginError);
+        return { data: { user: null }, error: loginError };
+      });
 
     if (error || !data.user) {
       const fallbackUser = email === adminLoginEmail ? user ?? (await findLocalUserByEmail(email)) : null;
@@ -312,7 +319,7 @@ authRouter.post('/login', async (req, res) => {
         return res.status(401).json({ data: null, error: { message: 'Invalid credentials' } });
       }
 
-      const ensuredAdmin = envAdminPasswordOk ? await ensureEnvAdminSupabaseUser(adminLoginEmail, password) : null;
+      const ensuredAdmin = envAdminPasswordOk ? await safelyEnsureEnvAdminSupabaseUser(adminLoginEmail, password) : null;
       const now = new Date().toISOString();
       user =
         fallbackUser ??
@@ -327,7 +334,7 @@ authRouter.post('/login', async (req, res) => {
         } satisfies NonNullable<typeof user>);
     } else {
       let clinicId: string | undefined;
-      const ensuredAdmin = email === adminLoginEmail ? await ensureEnvAdminSupabaseUser(email, password) : null;
+      const ensuredAdmin = email === adminLoginEmail ? await safelyEnsureEnvAdminSupabaseUser(email, password) : null;
 
       if (supabaseAdmin) {
         const { data: clinic } = await supabaseAdmin

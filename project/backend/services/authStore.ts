@@ -2,6 +2,7 @@ import { existsSync, promises as fs } from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
+import { readSupabaseServiceKey, readSupabaseUrl } from '../utils/supabaseEnv.js';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -44,20 +45,11 @@ const safeWriteJsonArray = async (filePath: string, data: JsonRecord[]): Promise
 
 const createId = (prefix: string) => `${prefix}_${randomUUID()}`;
 
-const readEnv = (...names: string[]) => {
-  for (const name of names) {
-    const value = process.env[name]?.trim();
-    if (value) return value;
-  }
-
-  return '';
-};
-
 let cachedSupabaseAdmin: SupabaseClient | null = null;
 
 const getSupabaseAdmin = () => {
-  const url = readEnv('SUPABASE_URL', 'VITE_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL');
-  const key = readEnv('SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_KEY');
+  const url = readSupabaseUrl();
+  const key = readSupabaseServiceKey();
 
   if (!url || !key) return null;
   if (!cachedSupabaseAdmin) {
@@ -117,12 +109,16 @@ export type AuthSession = {
 export async function listUsers(): Promise<AuthUser[]> {
   const supabase = getSupabaseAdmin();
   if (supabase) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, email, role, clinic_id, created_at, updated_at');
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, email, role, clinic_id, created_at, updated_at');
 
-    if (error) return [];
-    return ((data ?? []) as Record<string, unknown>[]).map(mapProfileToUser).filter((user) => user.id && user.email);
+      if (error) return [];
+      return ((data ?? []) as Record<string, unknown>[]).map(mapProfileToUser).filter((user) => user.id && user.email);
+    } catch {
+      return [];
+    }
   }
 
   const rows = await safeReadJsonArray(USERS_FILE);
@@ -151,14 +147,18 @@ export async function findUserByEmail(email: string): Promise<AuthUser | null> {
   const supabase = getSupabaseAdmin();
 
   if (supabase) {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('id, email, role, clinic_id, created_at, updated_at')
-      .eq('email', normalized)
-      .maybeSingle();
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, email, role, clinic_id, created_at, updated_at')
+        .eq('email', normalized)
+        .maybeSingle();
 
-    if (error || !data) return null;
-    return mapProfileToUser(data as Record<string, unknown>);
+      if (error || !data) return null;
+      return mapProfileToUser(data as Record<string, unknown>);
+    } catch {
+      return null;
+    }
   }
 
   return findLocalUserByEmail(normalized);

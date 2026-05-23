@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { createItem, deleteItem, readData, updateItem } from '../services/database.js';
+import { readEnv, readSupabaseServiceKey, readSupabaseUrl } from '../utils/supabaseEnv.js';
 
 type FilterOp = 'eq';
 
@@ -124,20 +125,11 @@ export const localApiRouter = Router();
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-const readEnv = (...names: string[]) => {
-  for (const name of names) {
-    const value = process.env[name]?.trim();
-    if (value) return value;
-  }
-
-  return '';
-};
-
 let cachedSupabaseAdmin: SupabaseClient | null = null;
 
 const getSupabaseAdmin = () => {
-  const url = readEnv('SUPABASE_URL', 'VITE_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL');
-  const key = readEnv('SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_KEY');
+  const url = readSupabaseUrl();
+  const key = readSupabaseServiceKey();
 
   if (!url || !key) return null;
 

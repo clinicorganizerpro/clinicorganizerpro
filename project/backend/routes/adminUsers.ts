@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import { createClient, type SupabaseClient, type User } from '@supabase/supabase-js';
 import { requireAdmin } from '../middlewares/admin.js';
 import { deleteUserByEmail, findUserByEmail, revokeAllSessionsForUser, upsertUser, type UserRole } from '../services/authStore.js';
+import { readSupabaseServiceKey, readSupabaseUrl } from '../utils/supabaseEnv.js';
 
 const adminUsersRouter = Router();
 
@@ -30,20 +31,11 @@ const normalizeRole = (role: unknown): UserRole => {
   return 'staff';
 };
 
-const readEnv = (...names: string[]) => {
-  for (const name of names) {
-    const value = process.env[name]?.trim();
-    if (value) return value;
-  }
-
-  return '';
-};
-
 let cachedSupabaseAdmin: SupabaseClient | null = null;
 
 const getSupabaseAdmin = () => {
-  const url = readEnv('SUPABASE_URL', 'VITE_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_URL');
-  const key = readEnv('SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_SECRET_KEY', 'SUPABASE_SERVICE_KEY');
+  const url = readSupabaseUrl();
+  const key = readSupabaseServiceKey();
 
   if (!url || !key) return null;
   if (!cachedSupabaseAdmin) {
