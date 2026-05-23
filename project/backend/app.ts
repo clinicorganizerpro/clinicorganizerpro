@@ -108,7 +108,6 @@ app.get('/api/_diag', (_req, res) => {
   });
 });
 
-app.use('/api', localApiRouter);
 app.use('/api/auth', authRouter);
 
 app.get('/api/admin/health', requireAdmin(), (_req, res) => {
@@ -119,6 +118,7 @@ app.use('/api', adminBillingRouter);
 app.use('/api/admin', adminConfigRouter);
 app.use('/api/admin', adminUsersRouter);
 app.use('/api/ai', aiRouter);
+app.use('/api', localApiRouter);
 
 // Netlify rewrites may invoke this function with the function prefix stripped.
 app.use('/auth', authRouter);
