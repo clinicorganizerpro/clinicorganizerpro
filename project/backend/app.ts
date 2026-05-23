@@ -12,7 +12,7 @@ import aiRouter from './routes/ai.js';
 import { readEnv, readSupabaseAnonKey, readSupabaseServiceKey, readSupabaseUrl } from './utils/supabaseEnv.js';
 
 const app = express();
-const API_VERSION = '2026-05-23-netlify-auth-debug-2';
+const API_VERSION = '2026-05-23-netlify-auth-fixed';
 
 const readCsvEnv = (...names: string[]) =>
   names
@@ -143,8 +143,17 @@ const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
     return;
   }
 
-  const isAuthLogin = req.originalUrl.includes('/auth/login');
   const rawMessage = err instanceof Error ? err.message : String(err ?? '');
+  const status = typeof (err as { status?: unknown }).status === 'number' ? (err as { status: number }).status : 500;
+  if (status === 400 && rawMessage.toLowerCase().includes('json')) {
+    res.status(400).json({
+      data: null,
+      error: { message: 'JSON inválido na requisição.' },
+    });
+    return;
+  }
+
+  const isAuthLogin = req.originalUrl.includes('/auth/login');
   const safeMessage = rawMessage
     .replace(/sb_(?:secret|publishable)_[A-Za-z0-9._-]+/g, '[supabase-key]')
     .replace(/eyJ[A-Za-z0-9._-]+/g, '[jwt]');
