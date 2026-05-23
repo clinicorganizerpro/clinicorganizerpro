@@ -1,6 +1,6 @@
 [build]
   base = "."
-  command = "npm --prefix project install && npm --prefix project run build"
+  command = "npm --prefix project install --include=dev && npm --prefix project run build"
   publish = "project/dist"
   functions = "project/netlify/functions"
 
