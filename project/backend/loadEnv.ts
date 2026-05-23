@@ -1,8 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const projectRoot = fileURLToPath(new URL('..', import.meta.url));
+const cwd = process.cwd();
+const projectRoot = fs.existsSync(path.join(cwd, 'package.json'))
+  ? cwd
+  : fs.existsSync(path.join(cwd, 'project', 'package.json'))
+    ? path.join(cwd, 'project')
+    : cwd;
 
 function loadEnvFile(fileName: string) {
   const filePath = path.join(projectRoot, fileName);

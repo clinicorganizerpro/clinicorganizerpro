@@ -1,12 +1,16 @@
-import { promises as fs } from 'fs';
+import { existsSync, promises as fs } from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
-import { fileURLToPath } from 'url';
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 type JsonRecord = Record<string, unknown>;
 
-const BASE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'); // .../backend
+const cwd = process.cwd();
+const BASE_DIR = path.basename(cwd) === 'project'
+  ? path.join(cwd, 'backend')
+  : existsSync(path.join(cwd, 'project', 'backend'))
+    ? path.join(cwd, 'project', 'backend')
+    : path.join(cwd, 'backend');
 const DATA_DIR = path.join(BASE_DIR, 'data');
 
 const USERS_FILE = path.join(DATA_DIR, 'users.json');

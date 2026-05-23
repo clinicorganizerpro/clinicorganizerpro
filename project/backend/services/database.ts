@@ -1,4 +1,4 @@
-import { promises as fs } from 'fs';
+import { existsSync, promises as fs } from 'fs';
 import path from 'path';
 import { randomUUID } from 'crypto';
 
@@ -27,14 +27,20 @@ export type DatabaseLog = {
   meta?: JsonRecord;
 };
 
-import { fileURLToPath } from 'node:url';
-
-const BASE_DIR = path.dirname(fileURLToPath(import.meta.url)); // .../services
-const BACKEND_ROOT_DIR = path.resolve(BASE_DIR, '..'); // .../backend
+const cwd = process.cwd();
+const BACKEND_ROOT_DIR = path.basename(cwd) === 'project'
+  ? path.join(cwd, 'backend')
+  : fsSyncExists(path.join(cwd, 'project', 'backend'))
+    ? path.join(cwd, 'project', 'backend')
+    : path.join(cwd, 'backend');
 
 const DATA_DIR = path.join(BACKEND_ROOT_DIR, 'data');
 const BACKUPS_DIR = path.join(BACKEND_ROOT_DIR, 'backups');
 const LOGS_DIR = path.join(BACKEND_ROOT_DIR, 'logs');
+
+function fsSyncExists(target: string) {
+  return existsSync(target);
+}
 
 const ensureDirs = async () => {
   await Promise.all([fs.mkdir(DATA_DIR, { recursive: true }), fs.mkdir(BACKUPS_DIR, { recursive: true }), fs.mkdir(LOGS_DIR, { recursive: true })]);
