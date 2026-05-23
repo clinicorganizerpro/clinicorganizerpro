@@ -259,6 +259,17 @@ const safelyEnsureEnvAdminSupabaseUser = async (email: string, password: string)
   }
 };
 
+const createFallbackAdminLoginResponse = (email: string, clinicId?: string) => {
+  const accessJti = `${Date.now()}_access`;
+  const refreshTokenJti = `${Date.now()}_refresh_${Math.random().toString(36).slice(2)}`;
+  const fallbackAdminId = `admin_${Buffer.from(email).toString('base64url')}`;
+
+  return {
+    accessToken: signAccessToken({ sub: fallbackAdminId, email, role: 'admin', clinicId }, accessJti),
+    refreshToken: signRefreshToken({ sub: fallbackAdminId, jti: refreshTokenJti }),
+  };
+};
+
 const loadClinicProfile = async (clinicId?: string): Promise<ClinicAuthProfile | null> => {
   if (!clinicId) return null;
 
@@ -290,6 +301,16 @@ authRouter.post('/login', async (req, res) => {
   }
 
   const adminLoginEmail = getAdminLoginEmail().trim().toLowerCase();
+  const envAdminPassword = email === adminLoginEmail ? getAdminLoginPassword() : '';
+
+  if (envAdminPassword && password === envAdminPassword) {
+    const ensuredAdmin = await safelyEnsureEnvAdminSupabaseUser(adminLoginEmail, password);
+    return res.json({
+      data: createFallbackAdminLoginResponse(adminLoginEmail, ensuredAdmin?.clinicId),
+      error: null,
+    });
+  }
+
   let user = await findUserByEmail(email).catch((error) => {
     console.error('[auth] Failed to load user profile before login', error);
     return null;
