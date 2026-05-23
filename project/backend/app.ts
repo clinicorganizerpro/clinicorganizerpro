@@ -12,7 +12,7 @@ import aiRouter from './routes/ai.js';
 import { readEnv, readSupabaseAnonKey, readSupabaseServiceKey, readSupabaseUrl } from './utils/supabaseEnv.js';
 
 const app = express();
-const API_VERSION = '2026-05-23-netlify-auth-diag';
+const API_VERSION = '2026-05-23-netlify-auth-debug-2';
 
 const readCsvEnv = (...names: string[]) =>
   names
@@ -135,7 +135,7 @@ app.use('/api', (_req, res) => {
   res.status(404).json({ data: null, error: { message: 'Rota de API não encontrada.' } });
 });
 
-const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
+const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   // eslint-disable-next-line no-console
   console.error('[api] erro não tratado', err);
 
@@ -143,9 +143,17 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
 
+  const isAuthLogin = req.originalUrl.includes('/auth/login');
+  const rawMessage = err instanceof Error ? err.message : String(err ?? '');
+  const safeMessage = rawMessage
+    .replace(/sb_(?:secret|publishable)_[A-Za-z0-9._-]+/g, '[supabase-key]')
+    .replace(/eyJ[A-Za-z0-9._-]+/g, '[jwt]');
+
   res.status(500).json({
     data: null,
-    error: { message: 'Falha interna na API. Verifique os logs do backend.' },
+    error: {
+      message: isAuthLogin && safeMessage ? `Falha no login: ${safeMessage}` : 'Falha interna na API. Verifique os logs do backend.',
+    },
   });
 };
 
