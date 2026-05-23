@@ -48,7 +48,12 @@ const getSupabaseUrl = readSupabaseUrl;
 const getSupabaseServiceKey = readSupabaseServiceKey;
 const getSupabaseAnonKey = readSupabaseAnonKey;
 const getAdminLoginEmail = () => readEnv('ADMIN_LOGIN_EMAIL') || 'clinicorganizerpro@gmail.com';
-const getAdminLoginPassword = () => readEnv('ADMIN_LOGIN_PASSWORD', 'ADMIN_PASSWORD');
+const normalizeCredentialEnv = (value: string) => {
+  const trimmed = value.trim().replace(/^['"]|['"]$/g, '');
+  const assigned = trimmed.match(/^(?:ADMIN_LOGIN_PASSWORD|ADMIN_PASSWORD)\s*=\s*(.+)$/i);
+  return (assigned?.[1] ?? trimmed).trim().replace(/^['"]|['"]$/g, '');
+};
+const getAdminLoginPassword = () => normalizeCredentialEnv(readEnv('ADMIN_LOGIN_PASSWORD', 'ADMIN_PASSWORD'));
 
 let cachedSupabaseAdmin: SupabaseClient | null = null;
 let cachedSupabaseAuth: SupabaseClient | null = null;
