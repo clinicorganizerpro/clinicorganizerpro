@@ -159,6 +159,99 @@ type ClinicAuthProfile = {
   state?: string | null;
 };
 
+const findSupabaseAuthUserByEmail = async (supabaseAdmin: SupabaseClient, email: string) => {
+  for (let page = 1; page <= 20; page += 1) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 100 });
+    if (error) return null;
+
+    const found = data.users.find((candidate) => candidate.email?.trim().toLowerCase() === email);
+    if (found) return found;
+    if (data.users.length < 100) return null;
+  }
+
+  return null;
+};
+
+const ensureEnvAdminSupabaseUser = async (email: string, password: string) => {
+  const supabaseAdmin = getSupabaseAdmin();
+  if (!supabaseAdmin) return null;
+
+  const existing = await findSupabaseAuthUserByEmail(supabaseAdmin, email);
+  const appMetadata = { role: 'admin' };
+  const userMetadata = { name: 'Clinic Organizer Pro Admin' };
+
+  const authUser = existing
+    ? (
+        await supabaseAdmin.auth.admin.updateUserById(existing.id, {
+          password,
+          app_metadata: {
+            ...(existing.app_metadata ?? {}),
+            ...appMetadata,
+          },
+          user_metadata: {
+            ...(existing.user_metadata ?? {}),
+            ...userMetadata,
+          },
+          email_confirm: true,
+        })
+      ).data.user
+    : (
+        await supabaseAdmin.auth.admin.createUser({
+          email,
+          password,
+          email_confirm: true,
+          app_metadata: appMetadata,
+          user_metadata: userMetadata,
+        })
+      ).data.user;
+
+  if (!authUser?.id) return null;
+
+  const now = new Date().toISOString();
+  const { data: existingClinic } = await supabaseAdmin
+    .from('clinics')
+    .select('id')
+    .eq('user_id', authUser.id)
+    .order('created_at', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  let clinicId = typeof existingClinic?.id === 'string' ? existingClinic.id : '';
+
+  if (!clinicId) {
+    const { data: clinic } = await supabaseAdmin
+      .from('clinics')
+      .insert({
+        user_id: authUser.id,
+        plan_id: 'plan-pro',
+        name: 'Clinic Organizer Pro',
+        email,
+        status: 'active',
+      })
+      .select('id')
+      .single();
+
+    clinicId = typeof clinic?.id === 'string' ? clinic.id : '';
+  }
+
+  await supabaseAdmin.from('profiles').upsert({
+    id: authUser.id,
+    email,
+    full_name: 'Clinic Organizer Pro Admin',
+    role: 'admin',
+    clinic_id: clinicId || null,
+    updated_at: now,
+  });
+
+  return {
+    id: authUser.id,
+    email,
+    clinicId: clinicId || undefined,
+    created_at: authUser.created_at ?? now,
+    updated_at: now,
+  };
+};
+
 const loadClinicProfile = async (clinicId?: string): Promise<ClinicAuthProfile | null> => {
   if (!clinicId) return null;
 
@@ -211,18 +304,22 @@ authRouter.post('/login', async (req, res) => {
         return res.status(401).json({ data: null, error: { message: 'Invalid credentials' } });
       }
 
+      const ensuredAdmin = envAdminPasswordOk ? await ensureEnvAdminSupabaseUser(adminLoginEmail, password) : null;
+      const now = new Date().toISOString();
       user =
         fallbackUser ??
         ({
-          id: `admin_${Buffer.from(adminLoginEmail).toString('base64url')}`,
+          id: ensuredAdmin?.id ?? `admin_${Buffer.from(adminLoginEmail).toString('base64url')}`,
           email: adminLoginEmail,
           passwordHash: await bcrypt.hash(password, 10),
           role: 'admin',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          clinicId: ensuredAdmin?.clinicId,
+          created_at: ensuredAdmin?.created_at ?? now,
+          updated_at: ensuredAdmin?.updated_at ?? now,
         } satisfies NonNullable<typeof user>);
     } else {
       let clinicId: string | undefined;
+      const ensuredAdmin = email === adminLoginEmail ? await ensureEnvAdminSupabaseUser(email, password) : null;
 
       if (supabaseAdmin) {
         const { data: clinic } = await supabaseAdmin
@@ -247,7 +344,7 @@ authRouter.post('/login', async (req, res) => {
       }
 
       const metadataClinicId = data.user.user_metadata?.clinicId;
-      clinicId = clinicId || (typeof metadataClinicId === 'string' ? metadataClinicId : undefined);
+      clinicId = ensuredAdmin?.clinicId || clinicId || (typeof metadataClinicId === 'string' ? metadataClinicId : undefined);
 
       const now = new Date().toISOString();
       const role: UserRole = email === adminLoginEmail ? 'admin' : 'staff';

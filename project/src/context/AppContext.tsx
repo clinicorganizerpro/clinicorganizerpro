@@ -1495,18 +1495,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
         let supabaseSession: Session | null = null;
         let supabaseUser: User | null = null;
 
-        if (HAS_SUPABASE_CONFIG && !isJwtAdmin) {
+        if (HAS_SUPABASE_CONFIG) {
           const supabaseResult = await supabase.auth.signInWithPassword({ email, password });
 
           if (supabaseResult.error || !supabaseResult.data?.session || !supabaseResult.data.user) {
-            return {
-              ok: false,
-              error: supabaseResult.error?.message ?? 'Login validado no backend, mas sem sessão Supabase para persistir dados.',
-            };
+            if (isJwtAdmin) {
+              console.warn('[auth/supabase] admin session unavailable, continuing with backend JWT:', supabaseResult.error?.message);
+            } else {
+              return {
+                ok: false,
+                error: supabaseResult.error?.message ?? 'Login validado no backend, mas sem sessão Supabase para persistir dados.',
+              };
+            }
+          } else {
+            supabaseSession = supabaseResult.data.session as Session;
+            supabaseUser = supabaseResult.data.user as User;
           }
-
-          supabaseSession = supabaseResult.data.session as Session;
-          supabaseUser = supabaseResult.data.user as User;
         }
 
         const nextUser: User = {
