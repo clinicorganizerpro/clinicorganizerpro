@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { useApp } from '../context/useApp';
 import { useLayout } from '../context/LayoutContext';
-import { Patient, Prescription, ProcedurePhoto, Medication, Anamnesis } from '../types';
+import { Patient, Prescription, ProcedurePhoto, Medication, Anamnesis, Appointment } from '../types';
 import { Button } from '../components/ui/Button';
 import { BackButton } from '../components/layout/BackButton';
 import { Badge } from '../components/ui/Badge';
@@ -38,6 +38,30 @@ function getDateTimeValue(d?: string) {
   if (!d) return 0;
   const parsed = new Date(d).getTime();
   return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function getPatientAppointments(patient: Patient, appointments: Appointment[]) {
+  const patientName = patient.name.trim().toLowerCase();
+  return appointments
+    .filter((appointment) => {
+      return (
+        appointment.patientId === patient.id ||
+        (!!patientName && appointment.patientName.trim().toLowerCase() === patientName)
+      );
+    })
+    .sort((left, right) => {
+      const leftValue = `${left.date || ''} ${left.time || ''}`;
+      const rightValue = `${right.date || ''} ${right.time || ''}`;
+      return rightValue.localeCompare(leftValue);
+    });
+}
+
+function formatAppointmentSummary(appointments: Appointment[]) {
+  if (appointments.length === 0) return 'Sem agendamentos';
+  return appointments
+    .slice(0, 2)
+    .map((appointment) => `${formatDate(appointment.date)}${appointment.time ? ` ${appointment.time}` : ''}`)
+    .join(', ');
 }
 
 function escapeHtml(value: string) {
@@ -1642,7 +1666,7 @@ function AnamnesisModal({ open, onClose, patientId, anamneses }: {
 function PatientDetailModal({ open, onClose, patient, onEdit }: {
   open: boolean; onClose: () => void; patient: Patient; onEdit: () => void;
 }) {
-  const { prescriptions, procedurePhotos, anamneses } = useApp();
+  const { prescriptions, procedurePhotos, anamneses, appointments } = useApp();
   const [prescOpen, setPrescOpen] = useState(false);
   const [photosOpen, setPhotosOpen] = useState(false);
   const [anamOpen, setAnamOpen] = useState(false);
@@ -1677,6 +1701,11 @@ function PatientDetailModal({ open, onClose, patient, onEdit }: {
       }
       return right.date.localeCompare(left.date);
     }), [anamneses, patient.id]);
+
+  const patientAppointments = useMemo(
+    () => getPatientAppointments(patient, appointments),
+    [appointments, patient],
+  );
 
   const fullAddress = [
     patient.street,
@@ -1751,6 +1780,32 @@ function PatientDetailModal({ open, onClose, patient, onEdit }: {
             </div>
           )}
 
+          <div className="p-3 rounded-xl" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <p className="text-[10px] text-zinc-600 font-semibold uppercase tracking-wider">Agendamentos</p>
+              <span className="text-[11px] text-zinc-500">{patientAppointments.length}</span>
+            </div>
+            {patientAppointments.length === 0 ? (
+              <p className="text-[12px] text-zinc-500">Nenhuma data vinculada.</p>
+            ) : (
+              <div className="space-y-2">
+                {patientAppointments.slice(0, 4).map((appointment) => (
+                  <div key={appointment.id} className="flex items-center justify-between gap-3 rounded-lg bg-white/[0.03] px-3 py-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-[12px] font-semibold text-zinc-300">
+                        {formatDate(appointment.date)}{appointment.time ? ` as ${appointment.time}` : ''}
+                      </p>
+                      <p className="truncate text-[11px] text-zinc-600">{appointment.procedure || 'Procedimento'}</p>
+                    </div>
+                    <Badge variant={appointment.status === 'completed' ? 'success' : appointment.status === 'cancelled' ? 'error' : 'neutral'}>
+                      {appointment.status === 'completed' ? 'Concluido' : appointment.status === 'cancelled' ? 'Cancelado' : 'Agendado'}
+                    </Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-2 border-t border-white/[0.05] pt-4 sm:flex sm:flex-wrap">
             <Button size="sm" icon={<Pencil size={12} />} onClick={onEdit}>Editar</Button>
             <Button size="sm" variant="secondary" icon={<FileText size={12} />} onClick={() => setFullRecordOpen(true)}>Prontuário completo</Button>
@@ -1803,6 +1858,24 @@ function PatientDetailModal({ open, onClose, patient, onEdit }: {
               {renderRecordField('Última visita', formatDate(patient.lastVisit))}
               {renderRecordField('Próxima consulta', patient.nextAppointment ? formatDate(patient.nextAppointment) : '—')}
             </div>
+          ))}
+
+          {renderRecordSection(`Agendamentos (${patientAppointments.length})`, (
+            patientAppointments.length === 0 ? (
+              <p className="rounded-xl bg-white/[0.03] p-4 text-[12px] text-zinc-600">Nenhum agendamento registrado.</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {patientAppointments.map((appointment) => (
+                  <div key={appointment.id} className="rounded-xl p-4" style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)' }}>
+                    <p className="text-[13px] font-semibold text-zinc-200">
+                      {formatDate(appointment.date)}{appointment.time ? ` as ${appointment.time}` : ''}
+                    </p>
+                    <p className="mt-1 text-[12px] text-zinc-500">{appointment.procedure || 'Procedimento'}</p>
+                    <p className="mt-2 text-[12px] text-zinc-400">{formatCurrency(appointment.value || 0)} · {appointment.professional || 'Profissional'}</p>
+                  </div>
+                ))}
+              </div>
+            )
           ))}
 
           {renderRecordSection(`Anamneses (${patientAnamneses.length})`, (
@@ -1935,7 +2008,7 @@ function PatientDetailModal({ open, onClose, patient, onEdit }: {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 export function Pacientes() {
-  const { patients, deletePatient, loading } = useApp();
+  const { patients, appointments, deletePatient, loading } = useApp();
   const { pageParams } = useLayout();
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState<'all' | 'active' | 'inactive' | 'pending'>('all');
@@ -1964,6 +2037,13 @@ export function Pacientes() {
     inactive: patients.filter(p => p.status === 'inactive').length,
     pending: patients.filter(p => p.status === 'pending').length,
   }), [patients]);
+
+  const appointmentsByPatient = useMemo(() => {
+    return patients.reduce<Record<string, Appointment[]>>((accumulator, patient) => {
+      accumulator[patient.id] = getPatientAppointments(patient, appointments);
+      return accumulator;
+    }, {});
+  }, [appointments, patients]);
 
   return (
     <div className="space-y-6 relative">
@@ -2045,6 +2125,12 @@ export function Pacientes() {
                 <p className="text-zinc-600">Total gasto</p>
                 <p className="mt-0.5 font-bold text-zinc-300">{formatCurrency(patient.totalSpent)}</p>
               </div>
+              <div className="col-span-2 rounded-lg bg-white/[0.03] p-2">
+                <p className="text-zinc-600">Agendamentos</p>
+                <p className="mt-0.5 truncate font-medium text-zinc-400">
+                  {formatAppointmentSummary(appointmentsByPatient[patient.id] ?? [])}
+                </p>
+              </div>
             </div>
 
             <div className="mt-3 flex items-center justify-end gap-1">
@@ -2059,7 +2145,7 @@ export function Pacientes() {
         <table className="w-full">
           <thead>
             <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-              {['Paciente', 'Contato', 'Última Visita', 'Total Gasto', 'Status', 'Ações'].map(h => (
+              {['Paciente', 'Contato', 'Agendamentos', 'Última Visita', 'Total Gasto', 'Status', 'Ações'].map(h => (
                 <th key={h} className="text-left px-5 py-3.5 text-[11px] font-semibold text-zinc-600 uppercase tracking-wider whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -2067,10 +2153,10 @@ export function Pacientes() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={6} className="px-5 py-8">
+                <td colSpan={7} className="px-5 py-8">
                   <div className="space-y-3 fade-in">
                     {Array.from({ length: 5 }).map((_, i) => (
-                      <div key={i} className="grid grid-cols-6 gap-3 items-center">
+                      <div key={i} className="grid grid-cols-7 gap-3 items-center">
                         <Skeleton className="h-10 col-span-2" />
                         <Skeleton className="h-10 col-span-1" />
                         <Skeleton className="h-10 col-span-1" />
@@ -2082,7 +2168,7 @@ export function Pacientes() {
                 </td>
               </tr>
             ) : filtered.length === 0 ? (
-              <tr><td colSpan={6}>
+              <tr><td colSpan={7}>
                 <div className="flex flex-col items-center py-16">
                   <User size={32} className="text-zinc-700 mb-3" />
                   <p className="text-[13px] text-zinc-500">Nenhum paciente encontrado</p>
@@ -2114,6 +2200,14 @@ export function Pacientes() {
                 <td className="px-5 py-3.5">
                   <p className="text-[12px] text-zinc-400">{patient.phone || '—'}</p>
                   <p className="text-[11px] text-zinc-600">{patient.email || '—'}</p>
+                </td>
+                <td className="px-5 py-3.5">
+                  <p className="max-w-[220px] truncate text-[12px] text-zinc-400">
+                    {formatAppointmentSummary(appointmentsByPatient[patient.id] ?? [])}
+                  </p>
+                  <p className="text-[11px] text-zinc-600">
+                    {(appointmentsByPatient[patient.id] ?? []).length} data(s)
+                  </p>
                 </td>
                 <td className="px-5 py-3.5 text-[12px] text-zinc-400">{formatDate(patient.lastVisit)}</td>
                 <td className="px-5 py-3.5 text-[13px] font-bold text-zinc-300 tracking-tight">{formatCurrency(patient.totalSpent)}</td>

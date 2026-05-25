@@ -6,6 +6,11 @@ type LocalApiListResponse<T> = { data: T[] | null; error: { message: string } | 
 type LocalApiItemResponse<T> = { data: T | null; error: { message: string } | null };
 type LocalApiDeleteResponse = { data: unknown; error: { message: string } | null };
 
+const getElectronLocalDb = () => {
+  if (typeof window === 'undefined') return null;
+  return window.clinicLocalDb?.isAvailable ? window.clinicLocalDb : null;
+};
+
 const safeJson = async <T,>(res: Response): Promise<T> => {
   const text = await res.text();
   if (!text) {
@@ -18,6 +23,15 @@ export async function localApiList<T extends { id: string }>(
   relation: string,
   filters?: Array<{ col: string; val: unknown }>,
 ): Promise<T[]> {
+  const electronDb = getElectronLocalDb();
+  if (electronDb) {
+    try {
+      return await electronDb.records.list<T>(relation, filters?.map((filter) => ({ op: 'eq', ...filter })));
+    } catch (error) {
+      console.warn('[local-api] IPC list failed, falling back to HTTP:', error);
+    }
+  }
+
   const url = createApiUrl(`/api/${relation}`);
 
   if (filters) {
@@ -28,7 +42,12 @@ export async function localApiList<T extends { id: string }>(
     });
   }
 
-  const res = await apiFetch(url.toString(), { method: 'GET' });
+  let res: Response;
+  try {
+    res = await apiFetch(url.toString(), { method: 'GET' });
+  } catch (error) {
+    throw error;
+  }
   if (!res.ok) {
     const err = (await safeJson<{ error?: { message?: string } }>(res).catch(() => null)) as
       | { error?: { message?: string } }
@@ -44,13 +63,27 @@ export async function localApiCreate<T extends { id: string }>(
   relation: string,
   payload: Omit<T, 'id'> & Partial<Pick<T, 'id'>>,
 ): Promise<T> {
+  const electronDb = getElectronLocalDb();
+  if (electronDb) {
+    try {
+      return await electronDb.records.create<T>(relation, payload as Record<string, unknown>);
+    } catch (error) {
+      console.warn('[local-api] IPC create failed, falling back to HTTP:', error);
+    }
+  }
+
   const url = createApiUrl(`/api/${relation}`);
 
-  const res = await apiFetch(url.toString(), {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ payload }),
-  });
+  let res: Response;
+  try {
+    res = await apiFetch(url.toString(), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ payload }),
+    });
+  } catch (error) {
+    throw error;
+  }
 
   const json = (await safeJson<LocalApiItemResponse<T>>(res).catch(() => null)) as
     | LocalApiItemResponse<T>
@@ -75,18 +108,32 @@ export async function localApiCreate<T extends { id: string }>(
 export async function localApiUpdate<T extends { id: string }>(
   relation: string,
   id: string,
-  payload: Omit<T, 'id'> & Partial<Pick<T, 'id'>>,
+  payload: Partial<Omit<T, 'id'>> & Partial<Pick<T, 'id'>>,
 ): Promise<T> {
+  const electronDb = getElectronLocalDb();
+  if (electronDb) {
+    try {
+      return await electronDb.records.update<T>(relation, id, payload as Record<string, unknown>);
+    } catch (error) {
+      console.warn('[local-api] IPC update failed, falling back to HTTP:', error);
+    }
+  }
+
   const url = createApiUrl(`/api/${relation}`);
   url.searchParams.set('f.0.op', 'eq');
   url.searchParams.set('f.0.col', 'id');
   url.searchParams.set('f.0.val', JSON.stringify(id));
 
-  const res = await apiFetch(url.toString(), {
-    method: 'PUT',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ payload: { ...payload, id } }),
-  });
+  let res: Response;
+  try {
+    res = await apiFetch(url.toString(), {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ payload: { ...payload, id } }),
+    });
+  } catch (error) {
+    throw error;
+  }
 
   const json = (await safeJson<LocalApiItemResponse<T>>(res).catch(() => null)) as
     | LocalApiItemResponse<T>
@@ -112,12 +159,27 @@ export async function localApiDelete(
   relation: string,
   id: string,
 ): Promise<void> {
+  const electronDb = getElectronLocalDb();
+  if (electronDb) {
+    try {
+      await electronDb.records.delete(relation, id);
+      return;
+    } catch (error) {
+      console.warn('[local-api] IPC delete failed, falling back to HTTP:', error);
+    }
+  }
+
   const url = createApiUrl(`/api/${relation}`);
   url.searchParams.set('f.0.op', 'eq');
   url.searchParams.set('f.0.col', 'id');
   url.searchParams.set('f.0.val', JSON.stringify(id));
 
-  const res = await apiFetch(url.toString(), { method: 'DELETE' });
+  let res: Response;
+  try {
+    res = await apiFetch(url.toString(), { method: 'DELETE' });
+  } catch (error) {
+    throw error;
+  }
   const json = (await safeJson<LocalApiDeleteResponse>(res).catch(() => null)) as
     | LocalApiDeleteResponse
     | null;

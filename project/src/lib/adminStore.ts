@@ -571,6 +571,14 @@ export function persistAdminData(data: AdminData): void {
 
   try {
     window.localStorage.setItem(ADMIN_DATA_STORAGE_KEY, JSON.stringify(data));
+    if (window.clinicLocalDb?.isAvailable) {
+      void window.clinicLocalDb.records.create('settings', {
+        id: 'admin_state',
+        type: 'admin_state',
+        data,
+        updatedAt: data.updatedAt,
+      });
+    }
   } catch (error) {
     console.error('Failed to persist admin data:', error);
   }

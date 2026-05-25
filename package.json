@@ -4,7 +4,10 @@
   "scripts": {
     "dev": "npm --prefix project run dev",
     "build": "npm --prefix project run build",
+    "build:railway": "npm --prefix project ci && npm --prefix project run build",
+    "dist:win": "npm --prefix project run dist:win",
     "start": "npm --prefix project run start",
+    "start:railway": "npm --prefix project run start:railway",
     "lint": "npm --prefix project run lint",
     "preview": "npm --prefix project run preview",
     "typecheck": "npm --prefix project run typecheck",

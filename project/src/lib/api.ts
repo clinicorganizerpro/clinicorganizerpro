@@ -16,6 +16,10 @@ export class ApiError extends Error {
 }
 
 export const getApiBaseUrl = () => {
+  if (typeof window !== 'undefined' && window.clinicLocalDb?.isAvailable) {
+    return window.clinicLocalDb.localBackendUrl ?? 'http://127.0.0.1:8788';
+  }
+
   const configured = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
 
   if (configured) {
@@ -31,11 +35,33 @@ export const createApiUrl = (path: string) => {
   }
 
   const baseUrl = getApiBaseUrl();
+  const normalizedPath =
+    baseUrl.endsWith('/functions/v1/api') && path.startsWith('/api/')
+      ? path.slice('/api'.length)
+      : path;
   const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
-  return new URL(`${baseUrl}${path}`, origin);
+  return new URL(`${baseUrl}${normalizedPath}`, origin);
 };
 
 const sleep = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
+
+const readStoredAccessToken = () => {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const adminJwt = window.localStorage.getItem('clinic-organizer-pro-admin-jwt');
+    if (adminJwt) {
+      const parsed = JSON.parse(adminJwt) as { accessToken?: unknown };
+      if (typeof parsed.accessToken === 'string' && parsed.accessToken.trim()) {
+        return parsed.accessToken;
+      }
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+};
 
 export async function readApiJson<T>(response: Response): Promise<ApiEnvelope<T> | null> {
   const text = await response.text();
@@ -53,6 +79,7 @@ export async function apiFetch(path: string, init: RequestInit = {}, retries = 1
         ...init,
         headers: {
           ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+          ...(readStoredAccessToken() ? { Authorization: `Bearer ${readStoredAccessToken()}` } : {}),
           ...(init.headers ?? {}),
         },
         signal: init.signal ?? AbortSignal.timeout(15000),

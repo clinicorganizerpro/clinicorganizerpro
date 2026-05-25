@@ -15,5 +15,11 @@ project/backend/backups/
 project/backend/data/
 project/backend/dist/
 project/backend/logs/
+project/database/*.db
+project/database/*.db-shm
+project/database/*.db-wal
+project/database/*.log
+project/database/backups/*.db
+project/release/
 project/tmp_*.json
 .vscode/

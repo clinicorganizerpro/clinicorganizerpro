@@ -22,9 +22,12 @@ const readCsvEnv = (...names: string[]) =>
 
 const allowedOrigins = new Set([
   ...readCsvEnv('CORS_ORIGIN', 'FRONTEND_URL', 'APP_URL', 'PUBLIC_APP_URL', 'NETLIFY_URL', 'VERCEL_URL'),
-  ...(process.env.NODE_ENV !== 'production'
-    ? ['http://localhost:5173', 'http://localhost:4173', 'http://127.0.0.1:5173', 'http://127.0.0.1:4173']
-    : []),
+  'http://localhost:5173',
+  'http://localhost:4173',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:4173',
+  'https://clinicorganizerpro.netlify.app',
+  'https://clinicorganzerpro.netlify.app',
 ]);
 
 app.use(
@@ -117,6 +120,7 @@ app.get('/api/admin/health', requireAdmin(), (_req, res) => {
 app.use('/api', adminBillingRouter);
 app.use('/api/admin', adminConfigRouter);
 app.use('/api/admin', adminUsersRouter);
+app.use('/api/admin/data', requireAdmin(['admin']), localApiRouter);
 app.use('/api/ai', aiRouter);
 app.use('/api', localApiRouter);
 
@@ -128,6 +132,7 @@ app.get('/admin/health', requireAdmin(), (_req, res) => {
 app.use('/', adminBillingRouter);
 app.use('/admin', adminConfigRouter);
 app.use('/admin', adminUsersRouter);
+app.use('/admin/data', requireAdmin(['admin']), localApiRouter);
 app.use('/ai', aiRouter);
 app.use('/', localApiRouter);
 

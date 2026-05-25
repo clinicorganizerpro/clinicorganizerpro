@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { localApiList } from '../lib/localApiClient';
 
 
 export interface AppointmentData {
@@ -9,6 +10,13 @@ export interface AppointmentData {
   appointmentTime: string;
   notes?: string;
 }
+
+const electronSupabase = () => {
+  if (typeof window !== 'undefined' && window.clinicLocalDb?.isAvailable) {
+    return window.clinicLocalDb;
+  }
+  return null;
+};
 
 export interface AvailableSlot {
   time: string;
@@ -76,7 +84,19 @@ async function getConflictingAppointments(
   appointmentDate: string,
   appointmentTime: string,
   endTime: string
-): Promise<boolean> {
+) {
+  const ipcDb = electronSupabase();
+  if (ipcDb) {
+    const all = await ipcDb.records.list<{ appointment_time: string; end_time: string; status: string }>(
+      'appointments',
+      [{ op: 'eq', col: 'professional_id', val: professionalId }],
+    );
+    const conflicts = all.filter(
+      (a) => a.appointment_date === appointmentDate && a.status === 'confirmed',
+    );
+    return conflicts.some((conf) => isTimeOverlap(appointmentTime, endTime, conf.appointment_time, conf.end_time));
+  }
+
   const { data: conflicts } = (await supabase
     .from('appointments')
     .select('appointment_time, end_time, status')
@@ -91,6 +111,12 @@ async function getConflictingAppointments(
 }
 
 async function getProfessionalAvailability(professionalId: string) {
+  const ipcDb = electronSupabase();
+  if (ipcDb) {
+    const professional = await ipcDb.records.findById<ProfessionalRow>('professionals', professionalId);
+    return professional;
+  }
+
   const { data: professional } = (await supabase
     .from('professionals')
     .select('start_time, end_time, lunch_start, lunch_end, available_days')
@@ -101,6 +127,12 @@ async function getProfessionalAvailability(professionalId: string) {
 }
 
 async function getServiceDuration(serviceId: string): Promise<number> {
+  const ipcDb = electronSupabase();
+  if (ipcDb) {
+    const service = await ipcDb.records.findById<ServiceRow>('services', serviceId);
+    return service?.duration_minutes || 30;
+  }
+
   const { data: service } = (await supabase
     .from('services')
     .select('duration_minutes')
@@ -111,6 +143,8 @@ async function getServiceDuration(serviceId: string): Promise<number> {
 }
 
 export async function createAppointment(data: AppointmentData) {
+  const ipcDb = electronSupabase();
+
   try {
     const professional = await getProfessionalAvailability(data.professionalId);
     if (!professional) {
@@ -140,11 +174,37 @@ export async function createAppointment(data: AppointmentData) {
       data.professionalId,
       data.appointmentDate,
       data.appointmentTime,
-      endTime
+      endTime,
     );
 
     if (hasConflict) {
       throw new Error('Time slot already booked');
+    }
+
+    if (ipcDb) {
+      const appointment = await ipcDb.records.create('appointments', {
+        patient_id: data.patientId,
+        professional_id: data.professionalId,
+        service_id: data.serviceId,
+        appointment_date: data.appointmentDate,
+        appointment_time: data.appointmentTime,
+        end_time: endTime,
+        duration_minutes: duration,
+        status: 'confirmed',
+        notes: data.notes,
+      });
+
+      if (appointment) {
+        await ipcDb.records.create('appointment_slots', {
+          appointment_id: appointment.id,
+          professional_id: data.professionalId,
+          slot_date: data.appointmentDate,
+          slot_start: data.appointmentTime,
+          slot_end: endTime,
+        });
+      }
+
+      return { success: true, appointment };
     }
 
     const { data: appointment, error: appointmentError } = (await supabase

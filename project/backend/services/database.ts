@@ -131,6 +131,8 @@ export async function writeData<T extends JsonRecord>(file: string, data: T[]): 
 
   const raw = JSON.stringify(data, null, 2);
   await fs.writeFile(dataPath, raw, 'utf8');
+  // eslint-disable-next-line no-console
+  console.info(`[api:data] wrote file=${file} rows=${data.length}`);
 }
 
 export async function createItem<T extends JsonRecord & { id: string }>(
@@ -147,6 +149,8 @@ export async function createItem<T extends JsonRecord & { id: string }>(
   data.push(nextItem);
 
   await writeData(file, data);
+  // eslint-disable-next-line no-console
+  console.info(`[api:data] created file=${file} id=${nextItem.id}`);
 
   await appendLog({
     id: createId(),
@@ -189,6 +193,8 @@ export async function updateItem<T extends JsonRecord & { id: string }>(
   data[index] = nextItem;
 
   await writeData(file, data);
+  // eslint-disable-next-line no-console
+  console.info(`[api:data] updated file=${file} id=${nextItem.id}`);
 
   await appendLog({
     id: createId(),
@@ -219,6 +225,8 @@ export async function deleteItem<T extends JsonRecord & { id: string }>(file: st
   }
 
   await writeData(file, next);
+  // eslint-disable-next-line no-console
+  console.info(`[api:data] deleted file=${file} id=${id}`);
 
   await appendLog({
     id: createId(),

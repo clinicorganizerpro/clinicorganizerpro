@@ -56,14 +56,42 @@ const filterEquals = (row: Record<string, unknown>, col: string, val: unknown) =
 
 const fileForRelation = (relation: string) => {
   switch (relation) {
+    case 'clinics':
+      return 'clinics.json';
     case 'patients':
       return 'pacientes.json';
     case 'appointments':
       return 'agendamentos.json';
+    case 'professionals':
+      return 'professionals.json';
+    case 'services':
+    case 'procedures':
+      return 'services.json';
+    case 'plans':
+    case 'subscription_plans':
+      return 'plans.json';
+    case 'settings':
+    case 'system_settings':
+    case 'clinic_settings':
+      return 'settings.json';
+    case 'procedurePhotos':
+    case 'procedure_photos':
+      return 'procedure_photos.json';
     case 'anamneses':
       return 'anamneses.json';
+    case 'prescriptions':
+      return 'prescriptions.json';
+    case 'messages':
+      return 'messages.json';
+    case 'campaigns':
+      return 'campaigns.json';
+    case 'notifications':
+      return 'notifications.json';
     case 'users':
       return 'usuarios.json';
+    case 'financeiro':
+    case 'financial':
+      return 'financeiro.json';
     case 'incomes':
     case 'financial_incomes':
       return 'incomes.json';
@@ -121,6 +149,14 @@ const ensureOkResponse = <T,>(data: T, error: { message: string } | null, res: R
 
 type JsonRow = Record<string, unknown>;
 
+const getErrorMessage = (err: unknown) => {
+  if (err instanceof Error) return err.message;
+  if (err && typeof err === 'object' && 'message' in err && typeof (err as { message?: unknown }).message === 'string') {
+    return (err as { message: string }).message;
+  }
+  return 'Unknown error';
+};
+
 export const localApiRouter = Router();
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -162,8 +198,37 @@ const transformKeys = (value: unknown, keyTransform: (key: string) => string): u
 
 const relationToSupabaseTable = (relation: string) => {
   switch (relation) {
+    case 'clinics':
+      return 'clinics';
     case 'patients':
       return 'patients';
+    case 'appointments':
+      return 'appointments';
+    case 'professionals':
+      return 'professionals';
+    case 'services':
+    case 'procedures':
+      return 'services';
+    case 'plans':
+    case 'subscription_plans':
+      return 'subscription_plans';
+    case 'settings':
+    case 'system_settings':
+    case 'clinic_settings':
+      return 'clinic_settings';
+    case 'prescriptions':
+      return 'prescriptions';
+    case 'procedurePhotos':
+    case 'procedure_photos':
+      return 'procedure_photos';
+    case 'anamneses':
+      return 'anamneses';
+    case 'messages':
+      return 'messages';
+    case 'campaigns':
+      return 'campaigns';
+    case 'notifications':
+      return 'notifications';
     case 'incomes':
     case 'financial_incomes':
       return 'incomes';
@@ -176,6 +241,60 @@ const relationToSupabaseTable = (relation: string) => {
 };
 
 const tableColumns: Record<string, Set<string>> = {
+  clinics: new Set([
+    'id',
+    'user_id',
+    'plan_id',
+    'name',
+    'email',
+    'phone',
+    'address',
+    'city',
+    'state',
+    'cnpj',
+    'stripe_customer_id',
+    'stripe_subscription_id',
+    'plan',
+    'subscription_status',
+    'current_period_start',
+    'current_period_end',
+    'trial_ends_at',
+    'status',
+    'notes',
+  ]),
+  subscription_plans: new Set([
+    'id',
+    'name',
+    'description',
+    'monthly_price',
+    'annual_price',
+    'stripe_price_id',
+    'features',
+    'max_users',
+    'max_patients',
+    'active',
+  ]),
+  clinic_settings: new Set([
+    'id',
+    'clinic_id',
+    'user_id',
+    'clinic_name',
+    'clinic_phone',
+    'clinic_email',
+    'clinic_address',
+    'clinic_city',
+    'clinic_state',
+    'clinic_cnpj',
+    'clinic_logo_url',
+    'notifications_email',
+    'notifications_sms',
+    'notifications_whatsapp',
+    'notifications_appointment',
+    'notifications_payment',
+    'team_members_limit',
+    'security_two_factor',
+    'security_password_reset_required',
+  ]),
   patients: new Set([
     'id',
     'user_id',
@@ -235,9 +354,59 @@ const tableColumns: Record<string, Set<string>> = {
     'status',
     'observations',
   ]),
+  services: new Set([
+    'id',
+    'user_id',
+    'clinic_id',
+    'name',
+    'description',
+    'price',
+    'duration_minutes',
+    'active',
+  ]),
+  anamneses: new Set([
+    'id',
+    'user_id',
+    'clinic_id',
+    'patient_id',
+    'date',
+    'main_complaint',
+    'medical_history',
+    'allergies',
+    'current_medications',
+    'family_history',
+    'social_history',
+    'previous_surgeries',
+    'vital_signs',
+    'observations',
+    'facial_assessment',
+    'esthetic_procedures',
+    'procedure_details',
+    'clinical_notes',
+    'aesthetic_photos_before',
+    'aesthetic_photos_after',
+    'digital_signature',
+    'signature_date',
+  ]),
 };
 
-const uuidIdTables = new Set(['patients']);
+const uuidIdTables = new Set([
+  'clinics',
+  'clinic_settings',
+  'subscription_plans',
+  'patients',
+  'appointments',
+  'prescriptions',
+  'procedure_photos',
+  'anamneses',
+  'messages',
+  'campaigns',
+  'notifications',
+  'incomes',
+  'expenses',
+  'professionals',
+  'services',
+]);
 
 const findSupabaseAuthUserByEmail = async (supabase: SupabaseClient, email: string) => {
   for (let page = 1; page <= 20; page += 1) {
@@ -285,10 +454,20 @@ const getDefaultOwner = async (supabase: SupabaseClient) => {
 
 const normalizeSupabasePayload = async (supabase: SupabaseClient, table: string, payload: JsonRow) => {
   const columns = tableColumns[table];
+  const supportsColumn = (column: string) => !columns || columns.has(column);
   const owner = await getDefaultOwner(supabase);
   const transformed = transformKeys(payload, camelToSnake) as JsonRow;
+
+  if (table === 'services' && transformed.duration !== undefined && transformed.duration_minutes === undefined) {
+    transformed.duration_minutes = transformed.duration;
+  }
+
+  if (table === 'subscription_plans' && transformed.price !== undefined && transformed.monthly_price === undefined) {
+    transformed.monthly_price = transformed.price;
+  }
+
   const normalized = Object.entries(transformed).reduce<JsonRow>((accumulator, [key, value]) => {
-    if (columns.has(key) && value !== undefined) {
+    if ((!columns || columns.has(key)) && value !== undefined) {
       accumulator[key] = value;
     }
     return accumulator;
@@ -302,12 +481,25 @@ const normalizeSupabasePayload = async (supabase: SupabaseClient, table: string,
     delete normalized.patient_id;
   }
 
-  if (!UUID_RE.test(String(normalized.user_id ?? '')) && owner?.userId) {
+  if (supportsColumn('user_id') && !UUID_RE.test(String(normalized.user_id ?? '')) && owner?.userId) {
     normalized.user_id = owner.userId;
   }
 
-  if (!UUID_RE.test(String(normalized.clinic_id ?? '')) && owner?.clinicId) {
+  if (supportsColumn('clinic_id') && !UUID_RE.test(String(normalized.clinic_id ?? '')) && owner?.clinicId) {
     normalized.clinic_id = owner.clinicId;
+  }
+
+  for (const key of Object.keys(normalized)) {
+    if (
+      key.endsWith('_id') &&
+      key !== 'user_id' &&
+      key !== 'clinic_id' &&
+      normalized[key] !== null &&
+      normalized[key] !== undefined &&
+      !UUID_RE.test(String(normalized[key]))
+    ) {
+      delete normalized[key];
+    }
   }
 
   return normalized;
@@ -400,6 +592,8 @@ localApiRouter.get('/:relation', async (req: Request, res: Response) => {
   try {
     const supabaseRows = await listSupabaseRows(relation, filters);
     if (supabaseRows) {
+      // eslint-disable-next-line no-console
+      console.info(`[api:data] GET ${relation} from supabase rows=${supabaseRows.length}`);
       return ensureOkResponse(supabaseRows, null, res);
     }
 
@@ -434,9 +628,13 @@ localApiRouter.get('/:relation', async (req: Request, res: Response) => {
       return ensureOkResponse(next, null, res);
     }
 
+    // eslint-disable-next-line no-console
+    console.info(`[api:data] GET ${relation} from file=${file} rows=${filtered.length}`);
     return ensureOkResponse(filtered, null, res);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
+    const message = getErrorMessage(err);
+    // eslint-disable-next-line no-console
+    console.error(`[api:data] GET ${relation} error: ${message}`, err);
     return ensureOkResponse([] as JsonRow[], { message }, res);
   }
 });
@@ -465,8 +663,12 @@ localApiRouter.post('/:relation', async (req: Request, res: Response) => {
   }
 
   try {
+    // eslint-disable-next-line no-console
+    console.info(`[api:data] POST ${relation} received`);
     const supabaseCreated = await createSupabaseRow(relation, payload as JsonRow);
     if (supabaseCreated) {
+      // eslint-disable-next-line no-console
+      console.info(`[api:data] POST ${relation} saved to supabase id=${String(supabaseCreated.id ?? '')}`);
       return ensureOkResponse(supabaseCreated, null, res);
     }
 
@@ -474,9 +676,13 @@ localApiRouter.post('/:relation', async (req: Request, res: Response) => {
       file,
       payload as JsonRow & { id?: string },
     );
+    // eslint-disable-next-line no-console
+    console.info(`[api:data] POST ${relation} saved to file=${file} id=${created.id}`);
     return ensureOkResponse(created, null, res);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
+    const message = getErrorMessage(err);
+    // eslint-disable-next-line no-console
+    console.error(`[api:data] POST ${relation} error: ${message}`, err);
     return ensureOkResponse(null, { message }, res);
   }
 });
@@ -505,15 +711,21 @@ localApiRouter.put('/:relation', async (req: Request, res: Response) => {
 
     const supabaseUpdated = await updateSupabaseRow(relation, idFilter.val, payload as JsonRow);
     if (supabaseUpdated) {
+      // eslint-disable-next-line no-console
+      console.info(`[api:data] PUT ${relation} saved to supabase id=${idFilter.val}`);
       return ensureOkResponse(supabaseUpdated, null, res);
     }
 
     const updated = await updateItem<JsonRow & { id: string }>(file, idFilter.val, payload as JsonRow & {
       id?: string;
     });
+    // eslint-disable-next-line no-console
+    console.info(`[api:data] PUT ${relation} saved to file=${file} id=${idFilter.val}`);
     return ensureOkResponse(updated, null, res);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
+    const message = getErrorMessage(err);
+    // eslint-disable-next-line no-console
+    console.error(`[api:data] PUT ${relation} error: ${message}`, err);
     return ensureOkResponse(null, { message }, res);
   }
 });
@@ -536,13 +748,19 @@ localApiRouter.delete('/:relation', async (req: Request, res: Response) => {
 
     const supabaseDeleted = await deleteSupabaseRow(relation, idFilter.val);
     if (supabaseDeleted) {
+      // eslint-disable-next-line no-console
+      console.info(`[api:data] DELETE ${relation} removed from supabase id=${idFilter.val}`);
       return ensureOkResponse(null, null, res);
     }
 
     await deleteItem<JsonRow & { id: string }>(file, idFilter.val);
+    // eslint-disable-next-line no-console
+    console.info(`[api:data] DELETE ${relation} removed from file=${file} id=${idFilter.val}`);
     return ensureOkResponse(null, null, res);
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Unknown error';
+    const message = getErrorMessage(err);
+    // eslint-disable-next-line no-console
+    console.error(`[api:data] DELETE ${relation} error: ${message}`, err);
     return ensureOkResponse(null, { message }, res);
   }
 });

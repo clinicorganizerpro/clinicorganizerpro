@@ -470,7 +470,11 @@ const createLocalPatientRecord = (
   const transformed = transformKeys(payload, camelToSnake) as AnyRecord;
   const id =
     overrides.id ??
-    (typeof transformed.id === 'string' && transformed.id.trim() ? transformed.id : `patient_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+    (typeof transformed.id === 'string' && transformed.id.trim()
+      ? transformed.id
+      : typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `patient_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
   const createdAt =
     overrides.createdAt ??
     (typeof transformed.created_at === 'string'
@@ -539,6 +543,38 @@ const mapRecordForState = (table: TableKey, record: AnyRecord): AnyRecord => {
     'updatedAt',
     'updated_at',
   ]);
+
+  if (table === 'patients') {
+    return createLocalPatientRecord(sanitized);
+  }
+
+  if (table === 'appointments') {
+    return criarAgendamentoLocal({
+      ...sanitized,
+      date: sanitized.date ?? sanitized.appointmentDate,
+      time: sanitized.time ?? sanitized.appointmentTime,
+    });
+  }
+
+  if (table === 'prescriptions') {
+    return criarReceitaClinicaLocal(sanitized);
+  }
+
+  if (table === 'procedurePhotos') {
+    return criarFotoProcedimentoLocal(sanitized);
+  }
+
+  if (table === 'anamneses') {
+    return criarAnamneseClinicaLocal(sanitized);
+  }
+
+  if (table === 'incomes') {
+    return criarReceitaLocal(sanitized);
+  }
+
+  if (table === 'expenses') {
+    return criarDespesaLocal(sanitized);
+  }
 
   if (table === 'notifications') {
     const nextRecord = { ...sanitized };
@@ -631,6 +667,32 @@ const prepareRecordForDatabase = (table: TableKey, payload: AnyRecord, userId: s
   return sanitized;
 };
 
+const createLocalApiRecord = (table: TableKey, payload: AnyRecord): AnyRecord => {
+  if (table === 'patients') return createLocalPatientRecord(payload);
+  if (table === 'appointments') return criarAgendamentoLocal(payload);
+  if (table === 'prescriptions') return criarReceitaClinicaLocal(payload);
+  if (table === 'procedurePhotos') return criarFotoProcedimentoLocal(payload);
+  if (table === 'anamneses') return criarAnamneseClinicaLocal(payload);
+  if (table === 'incomes') return criarReceitaLocal(payload);
+  if (table === 'expenses') return criarDespesaLocal(payload);
+
+  return {
+    ...payload,
+    id:
+      typeof payload.id === 'string' && payload.id.trim()
+        ? payload.id
+        : `${table}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+    createdAt: typeof payload.createdAt === 'string' ? payload.createdAt : new Date().toISOString(),
+  };
+};
+
+const attachBackendOwnership = (record: AnyRecord, userId: string, clinicId?: string | null): AnyRecord => ({
+  ...record,
+  user_id: userId,
+  clinic_id: clinicId || userId,
+  created_by: userId,
+});
+
 export function AppProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<User | null>(null);
@@ -639,6 +701,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const adminSessionRef = useRef<AdminSession | null>(null);
   const [adminData, setAdminData] = useState<AdminData>(() => loadAdminData());
   const [adminStateReady, setAdminStateReady] = useState(false);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.clinicLocalDb?.isAvailable) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const row = await window.clinicLocalDb?.records.findById<{ data?: unknown }>('settings', 'admin_state');
+        const candidate = row?.data;
+        if (
+          !cancelled &&
+          candidate &&
+          typeof candidate === 'object' &&
+          Array.isArray((candidate as Partial<AdminData>).plans) &&
+          Array.isArray((candidate as Partial<AdminData>).clinics) &&
+          Array.isArray((candidate as Partial<AdminData>).logins)
+        ) {
+          setAdminData(candidate as AdminData);
+          persistAdminData(candidate as AdminData);
+        }
+      } catch (error) {
+        console.error('Failed to load admin data from local SQLite:', error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const currentLogin = useMemo(() => {
     const email = user?.email?.trim().toLowerCase();
     const metadata = (user?.user_metadata ?? {}) as Record<string, unknown>;
@@ -811,6 +905,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const fetchTable = useCallback(async (table: TableKey, userId: string) => {
+    try {
+      const dbTable = getDatabaseTableName(table);
+      const rows = await localApiList<{ id: string } & Record<string, unknown>>(dbTable, [
+        { col: 'user_id', val: userId },
+      ]);
+      const mappedRows = rows.map((row) => mapRecordForState(table, row));
+      return mappedRows as never;
+    } catch (error) {
+      console.warn(`[records] Backend list failed for ${table}; using fallback source.`, error);
+    }
+
     if (!HAS_SUPABASE_CONFIG) {
       const localPatients = carregarPacientes(userId);
       const localPrescriptions = carregarReceitasClinicas(userId);
@@ -835,30 +940,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
                     : table === 'expenses'
                       ? localExpenses
                       : [];
-
-      try {
-        if (table === 'patients') {
-          const rows = await localApiList<{ id: string } & Record<string, unknown>>('patients', [
-            { col: 'user_id', val: userId },
-          ]);
-          const mappedRows = rows.map((row) => mapRecordForState(table, row));
-          return mappedRows as unknown as Patient[];
-        }
-
-        if (table === 'incomes') {
-          const { listIncomesFromBackend } = await import('../lib/financialStorage');
-          const rows = await listIncomesFromBackend(userId);
-          return rows;
-        }
-
-        if (table === 'expenses') {
-          const { listExpensesFromBackend } = await import('../lib/financialStorage');
-          const rows = await listExpensesFromBackend(userId);
-          return rows;
-        }
-      } catch {
-        // fallback: continua usando localStorage
-      }
 
       return localRows;
     }
@@ -971,6 +1052,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return null;
       }
 
+      const dbTable = getDatabaseTableName(resolvedTable);
+      const backendPayload = attachBackendOwnership(
+        createLocalApiRecord(resolvedTable, payload),
+        user.id,
+        currentClinic?.id,
+      );
+
+      try {
+        const created = await localApiCreate<{ id: string } & AnyRecord>(
+          dbTable,
+          backendPayload as Omit<{ id: string } & AnyRecord, 'id'> & Partial<Pick<{ id: string } & AnyRecord, 'id'>>,
+        );
+        await refreshAllRecords();
+        showToast('Registro salvo no backend.', 'success');
+        return mapRecordForState(resolvedTable, created as AnyRecord);
+      } catch (backendError) {
+        console.error(`Failed backend insert into ${dbTable}:`, backendError);
+        showToast('Backend indisponível. Usando fallback temporário.', 'error');
+      }
+
       if (resolvedTable === 'appointments' && !HAS_SUPABASE_CONFIG) {
         const nextAppointment = salvarAgendamento(criarAgendamentoLocal(payload), user.id);
         await refreshAllRecords();
@@ -1014,7 +1115,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return nextAnamnesis;
       }
 
-      const dbTable = getDatabaseTableName(resolvedTable);
       const clinicId = await getSupabaseClinicId();
       const { data, error } = await supabase
         .from(dbTable)
@@ -1122,7 +1222,91 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       return mapRecordForState(resolvedTable, data as AnyRecord);
     },
-    [refreshAllRecords, showToast, user?.id],
+    [currentClinic?.id, refreshAllRecords, showToast, user?.id],
+  );
+
+  const syncCompletedAppointmentEffects = useCallback(
+    async (currentAppointment: Appointment | null, nextAppointment: Appointment | null) => {
+      if (!user?.id || !currentAppointment || !nextAppointment) {
+        return;
+      }
+
+      const completedNow = nextAppointment.status === 'completed' && currentAppointment.status !== 'completed';
+
+      if (!completedNow) {
+        return;
+      }
+
+      const linkedPatient =
+        records.patients.find((patient) => patient.id === nextAppointment.patientId) ??
+        records.patients.find(
+          (patient) => patient.name.trim().toLowerCase() === nextAppointment.patientName.trim().toLowerCase(),
+        ) ??
+        carregarPacientes(user.id).find((patient) => patient.id === nextAppointment.patientId) ??
+        null;
+
+      if (linkedPatient) {
+        const appointmentValue =
+          Number.isFinite(nextAppointment.value) && nextAppointment.value > 0 ? nextAppointment.value : 0;
+        const nextProcedures = nextAppointment.procedure.trim()
+          ? Array.from(new Set([...(linkedPatient.procedures ?? []), nextAppointment.procedure.trim()]))
+          : linkedPatient.procedures ?? [];
+        const nextPatient = createLocalPatientRecord(
+          {
+            ...linkedPatient,
+            totalSpent: (linkedPatient.totalSpent ?? 0) + appointmentValue,
+            lastVisit: nextAppointment.date || linkedPatient.lastVisit,
+            procedures: nextProcedures,
+          },
+          { id: linkedPatient.id, createdAt: linkedPatient.createdAt },
+        );
+
+        try {
+          await localApiUpdate<{ id: string } & AnyRecord>(
+            getDatabaseTableName('patients'),
+            linkedPatient.id,
+            attachBackendOwnership(nextPatient as unknown as AnyRecord, user.id, currentClinic?.id),
+          );
+        } catch (error) {
+          console.error('Failed to update patient after appointment completion:', error);
+          await atualizarPaciente(linkedPatient.id, nextPatient, user.id);
+        }
+      }
+
+      if (Number.isFinite(nextAppointment.value) && nextAppointment.value > 0) {
+        const incomePayload: AnyRecord = {
+          id: `income_appointment_${nextAppointment.id}`,
+          patientId: nextAppointment.patientId,
+          patientName: nextAppointment.patientName,
+          service: nextAppointment.procedure,
+          paymentMethod: 'pix',
+          amount: nextAppointment.value,
+          status: 'paid',
+          attendanceDate: nextAppointment.date,
+          observations: nextAppointment.notes ?? '',
+        };
+
+        try {
+          await localApiUpdate<{ id: string } & AnyRecord>(
+            getDatabaseTableName('incomes'),
+            String(incomePayload.id),
+            attachBackendOwnership(incomePayload, user.id, currentClinic?.id),
+          );
+        } catch {
+          try {
+            await localApiCreate<{ id: string } & AnyRecord>(
+              getDatabaseTableName('incomes'),
+              attachBackendOwnership(incomePayload, user.id, currentClinic?.id) as Omit<{ id: string } & AnyRecord, 'id'> &
+                Partial<Pick<{ id: string } & AnyRecord, 'id'>>,
+            );
+          } catch (error) {
+            console.error('Failed to create income after appointment completion:', error);
+            salvarReceita(criarReceitaLocal(incomePayload), user.id);
+          }
+        }
+      }
+    },
+    [currentClinic?.id, records.patients, user?.id],
   );
 
   const updateRecord = useCallback(
@@ -1135,6 +1319,39 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       if (!resolvedTable) {
         return null;
+      }
+
+      const dbTable = getDatabaseTableName(resolvedTable);
+      const currentRecord = (records[resolvedTable] as AnyRecord[] | undefined)?.find((entry) => entry.id === id) ?? {};
+      const backendPayload = attachBackendOwnership(
+        {
+          ...currentRecord,
+          ...payload,
+          id,
+        },
+        user.id,
+        currentClinic?.id,
+      );
+
+      try {
+        const updated = await localApiUpdate<{ id: string } & AnyRecord>(
+          dbTable,
+          id,
+          backendPayload as Omit<{ id: string } & AnyRecord, 'id'> & Partial<Pick<{ id: string } & AnyRecord, 'id'>>,
+        );
+        const mappedUpdated = mapRecordForState(resolvedTable, updated as AnyRecord);
+        if (resolvedTable === 'appointments') {
+          await syncCompletedAppointmentEffects(
+            Object.keys(currentRecord).length ? (currentRecord as Appointment) : null,
+            mappedUpdated as Appointment,
+          );
+        }
+        await refreshAllRecords();
+        showToast('Registro atualizado no backend.', 'success');
+        return mappedUpdated;
+      } catch (backendError) {
+        console.error(`Failed backend update ${dbTable}:`, backendError);
+        showToast('Backend indisponível. Usando fallback temporário.', 'error');
       }
 
       if (resolvedTable === 'appointments' && !HAS_SUPABASE_CONFIG) {
@@ -1210,6 +1427,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         if (shouldCreateIncome) {
           const incomePayload: AnyRecord = {
+            id: `income_appointment_${nextAppointment.id}`,
             patientId: nextAppointment.patientId,
             patientName: nextAppointment.patientName,
             service: nextAppointment.procedure,
@@ -1308,7 +1526,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return nextPatient;
       }
 
-      const dbTable = getDatabaseTableName(resolvedTable);
       const clinicId = await getSupabaseClinicId();
       const { data, error } = await supabase
         .from(dbTable)
@@ -1418,7 +1635,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       return mapRecordForState(resolvedTable, data as AnyRecord);
     },
-    [refreshAllRecords, showToast, user?.id],
+    [currentClinic?.id, records, refreshAllRecords, showToast, syncCompletedAppointmentEffects, user?.id],
   );
 
   const deleteRecord = useCallback(
@@ -1431,6 +1648,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       if (!resolvedTable) {
         return false;
+      }
+
+      const dbTable = getDatabaseTableName(resolvedTable);
+
+      try {
+        await localApiDelete(dbTable, id);
+        await refreshAllRecords();
+        showToast('Registro removido no backend.', 'success');
+        return true;
+      } catch (backendError) {
+        console.error(`Failed backend delete from ${dbTable}:`, backendError);
+        showToast('Backend indisponível. Usando fallback temporário.', 'error');
       }
 
       if (resolvedTable === 'appointments' && !HAS_SUPABASE_CONFIG) {
@@ -1475,7 +1704,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return removed;
       }
 
-      const dbTable = getDatabaseTableName(resolvedTable);
       const clinicId = await getSupabaseClinicId();
       const { error } = await supabase
         .from(dbTable)
@@ -1517,7 +1745,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
 
     const isDefaultLocalAdmin = email.trim().toLowerCase() === ADMIN_LOGIN_EMAIL.trim().toLowerCase();
-
     if (localLogin || isDefaultLocalAdmin || email.trim()) {
       // Login real no backend local JWT
       const debug = {

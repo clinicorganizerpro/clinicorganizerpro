@@ -1,6 +1,7 @@
 import type { AppNotification } from '../types';
 import { supabase } from '../lib/supabase';
 import { apiFetch, createApiUrl } from '../lib/api';
+import { localApiCreate, localApiDelete, localApiList, localApiUpdate } from '../lib/localApiClient';
 
 export type CreateNotificationInput = Omit<
   AppNotification,
@@ -19,17 +20,22 @@ const safeJsonFetch = async <T,>(url: string, options: RequestInit): Promise<T> 
 };
 
 const getLocalNotifications = async (): Promise<AppNotification[]> => {
-  // Compat com o AppContext: usamos a tabela "notifications" do adapter (localApi).
-  // Para realtime/polling, este serviço consulta o backend local por um endpoint dedicado.
-  // Aqui mantemos um fallback caso endpoint dedicado ainda não esteja disponível.
-  const { data, error } = await supabase.from('notifications').select('*').eq('user_id', '').limit(RECENT_LIMIT);
-  // Nota: em modo local, user_id pode não ser exigido pelo adapter; mantemos fallback simples.
-  void error;
+  const electronDb = typeof window !== 'undefined' ? window.clinicLocalDb?.isAvailable ? window.clinicLocalDb : null : null;
+  if (electronDb) {
+    const all = await electronDb.records.list<AppNotification & { id: string }>('notifications');
+    return all.slice(0, RECENT_LIMIT);
+  }
+  const { data } = await supabase.from('notifications').select('*').limit(RECENT_LIMIT);
   return (data ?? []) as unknown as AppNotification[];
 };
 
 export const notificationService = {
   async listNotifications(): Promise<AppNotification[]> {
+    if (typeof window !== 'undefined' && window.clinicLocalDb?.isAvailable) {
+      const all = await localApiList<AppNotification & { id: string }>('notifications');
+      return all.slice(0, RECENT_LIMIT);
+    }
+
     try {
       const url = createApiUrl('/api/notifications');
       // localApi genérico não implementa limit; fazemos no cliente
@@ -47,6 +53,11 @@ export const notificationService = {
   },
 
   async markNotificationRead(notificationId: string): Promise<void> {
+    if (typeof window !== 'undefined' && window.clinicLocalDb?.isAvailable) {
+      await localApiUpdate<AppNotification & { id: string }>('notifications', notificationId, { read: true });
+      return;
+    }
+
     const url = createApiUrl(`/api/notifications/${notificationId}/read`);
 
     const res = await apiFetch(url.toString(), { method: 'POST' });
@@ -57,6 +68,14 @@ export const notificationService = {
   },
 
   async clearAllRead(): Promise<void> {
+    if (typeof window !== 'undefined' && window.clinicLocalDb?.isAvailable) {
+      const all = await localApiList<AppNotification & { id: string }>('notifications');
+      await Promise.all(
+        all.filter((notification) => notification.read).map((notification) => localApiDelete('notifications', notification.id)),
+      );
+      return;
+    }
+
     const url = createApiUrl('/api/notifications/clear');
     const res = await apiFetch(url.toString(), { method: 'POST' });
     if (!res.ok) {
@@ -66,6 +85,23 @@ export const notificationService = {
   },
 
   async createNotification(input: CreateNotificationInput): Promise<AppNotification> {
+    if (typeof window !== 'undefined' && window.clinicLocalDb?.isAvailable) {
+      const nowIso = new Date().toISOString();
+      return await localApiCreate<AppNotification & { id: string }>('notifications', {
+        type: input.type,
+        category: input.category,
+        title: input.title,
+        message: input.message,
+        createdAt: input.createdAt ?? nowIso,
+        read: input.read ?? false,
+        priority: input.priority,
+        relatedId: input.relatedId,
+        relatedType: input.relatedType,
+        actionUrl: input.actionUrl,
+        icon: input.icon,
+      });
+    }
+
     const url = createApiUrl('/api/notifications');
 
     const nowIso = new Date().toISOString();

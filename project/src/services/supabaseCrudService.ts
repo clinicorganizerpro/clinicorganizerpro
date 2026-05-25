@@ -32,19 +32,26 @@ const removeUndefined = (record: SupabaseRecord) =>
     return accumulator;
   }, {});
 
-const normalizeForDatabase = (data: SupabaseRecord) => {
+export const normalizeForDatabase = (data: SupabaseRecord, forceKeepIds = false) => {
   const transformed = transformKeys(data, camelToSnake) as SupabaseRecord;
   delete transformed.created_at;
   delete transformed.createdAt;
   delete transformed.updated_at;
   delete transformed.updatedAt;
-  delete transformed.user_id;
-  delete transformed.userId;
-  delete transformed.clinic_id;
-  delete transformed.clinicId;
-  delete transformed.created_by;
-  delete transformed.createdBy;
+  if (!forceKeepIds) {
+    delete transformed.user_id;
+    delete transformed.userId;
+    delete transformed.clinic_id;
+    delete transformed.clinicId;
+    delete transformed.created_by;
+    delete transformed.createdBy;
+  }
   return removeUndefined(transformed);
+};
+
+const getElectronLocalDb = () => {
+  if (typeof window === 'undefined') return null;
+  return window.clinicLocalDb?.isAvailable ? window.clinicLocalDb : null;
 };
 
 export const mapFromDatabase = <T = SupabaseRecord>(record: SupabaseRecord): T => {
@@ -52,6 +59,17 @@ export const mapFromDatabase = <T = SupabaseRecord>(record: SupabaseRecord): T =
 };
 
 export async function getCurrentSupabaseUser() {
+  const electronDb = getElectronLocalDb();
+  if (electronDb) {
+    return {
+      id: 'local-user',
+      email: 'local@clinic-organizer',
+      user_metadata: {
+        clinicId: 'local-user',
+      },
+    };
+  }
+
   const { data, error } = await supabase.auth.getUser();
   if (error || !data.user) {
     throw error ?? new Error('Usuário Supabase não autenticado.');
@@ -60,6 +78,11 @@ export async function getCurrentSupabaseUser() {
 }
 
 export async function getCurrentClinicId(): Promise<string> {
+  const electronDb = getElectronLocalDb();
+  if (electronDb) {
+    return 'local-user';
+  }
+
   const user = await getCurrentSupabaseUser();
   const metadata = (user.user_metadata ?? {}) as Record<string, unknown>;
   const metadataClinicId = metadata.clinicId ?? metadata.clinic_id;
@@ -96,6 +119,12 @@ export async function getCurrentClinicId(): Promise<string> {
 export function createSupabaseCrud<TRecord extends SupabaseRecord = SupabaseRecord>(tableName: string) {
   return {
     async list(): Promise<TRecord[]> {
+      const electronDb = getElectronLocalDb();
+      if (electronDb) {
+        const rows = await electronDb.records.list<SupabaseRecord>(tableName);
+        return rows.map((row) => mapFromDatabase<TRecord>(row));
+      }
+
       const clinicId = await getCurrentClinicId();
       const { data, error } = await supabase
         .from(tableName)
@@ -109,6 +138,12 @@ export function createSupabaseCrud<TRecord extends SupabaseRecord = SupabaseReco
     },
 
     async getById(id: string): Promise<TRecord | null> {
+      const electronDb = getElectronLocalDb();
+      if (electronDb) {
+        const row = await electronDb.records.findById<SupabaseRecord>(tableName, id);
+        return row ? mapFromDatabase<TRecord>(row) : null;
+      }
+
       const clinicId = await getCurrentClinicId();
       const { data, error } = await supabase
         .from(tableName)
@@ -123,6 +158,13 @@ export function createSupabaseCrud<TRecord extends SupabaseRecord = SupabaseReco
     },
 
     async create(data: SupabaseRecord): Promise<TRecord> {
+      const electronDb = getElectronLocalDb();
+      if (electronDb) {
+        const payload = normalizeForDatabase(data, true);
+        const created = await electronDb.records.create<SupabaseRecord>(tableName, payload);
+        return mapFromDatabase<TRecord>(created);
+      }
+
       const [user, clinicId] = await Promise.all([getCurrentSupabaseUser(), getCurrentClinicId()]);
       const payload = {
         ...normalizeForDatabase(data),
@@ -137,6 +179,13 @@ export function createSupabaseCrud<TRecord extends SupabaseRecord = SupabaseReco
     },
 
     async update(id: string, data: SupabaseRecord): Promise<TRecord> {
+      const electronDb = getElectronLocalDb();
+      if (electronDb) {
+        const payload = normalizeForDatabase(data, true);
+        const updated = await electronDb.records.update<SupabaseRecord>(tableName, id, payload);
+        return mapFromDatabase<TRecord>(updated);
+      }
+
       const clinicId = await getCurrentClinicId();
       const payload = normalizeForDatabase(data);
       const { data: updated, error } = await supabase
@@ -152,6 +201,11 @@ export function createSupabaseCrud<TRecord extends SupabaseRecord = SupabaseReco
     },
 
     async remove(id: string): Promise<boolean> {
+      const electronDb = getElectronLocalDb();
+      if (electronDb) {
+        return await electronDb.records.delete(tableName, id);
+      }
+
       const clinicId = await getCurrentClinicId();
       const { error } = await supabase
         .from(tableName)

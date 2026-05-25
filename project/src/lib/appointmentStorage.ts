@@ -117,7 +117,10 @@ const buildAppointment = (
 ): Appointment => {
   const id =
     overrides.id ??
-    (readString(payload.id) || `appointment_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`);
+    (readString(payload.id) ||
+      (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `appointment_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`));
 
   const createdAt =
     overrides.createdAt ??

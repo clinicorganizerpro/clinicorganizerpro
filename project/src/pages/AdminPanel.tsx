@@ -1,4 +1,4 @@
-import { type FormEvent, type ReactNode, useMemo, useState } from 'react';
+import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from 'react';
 import {
   fetchTableRows,
   insertRow as insertSupabaseRow,
@@ -17,6 +17,8 @@ import {
   ShieldCheck,
   Trash2,
   Users,
+  Wifi,
+  WifiOff,
   CircleUserRound,
   X,
 } from 'lucide-react';
@@ -27,8 +29,9 @@ import { Modal } from '../components/ui/Modal';
 import { useApp } from '../context/useApp';
 import type { AppContextType } from '../context/AppContext';
 import type { AdminClinic, AdminIntegrationSettings, AdminPlan } from '../lib/adminStore';
+import { apiRequest } from '../lib/api';
 
-type AdminTab = 'usuarios' | 'planos' | 'relatorios' | 'integracoes' | 'dados-gerais';
+type AdminTab = 'usuarios' | 'planos' | 'relatorios' | 'integracoes' | 'dados-gerais' | 'sincronizacao';
 
 type SupabaseRow = Record<string, unknown> & {
   id?: string | number;
@@ -143,6 +146,13 @@ export default function AdminPanel() {
   const [supabaseInsertJson, setSupabaseInsertJson] = useState<string>('');
   const [adminSaveMessage, setAdminSaveMessage] = useState<string | null>(null);
   const [selectedClinicId, setSelectedClinicId] = useState<string | null>(null);
+  const [syncStatus, setSyncStatus] = useState<{
+    online: boolean;
+    lastSyncAt?: string | null;
+    pending: number;
+    error?: string | null;
+  }>({ online: false, pending: 0 });
+  const [syncLoading, setSyncLoading] = useState(false);
   const planMap = useMemo(() => new Map<string, AdminPlan>(adminData.plans.map((plan) => [plan.id, plan])), [adminData.plans]);
   const clinicMap = useMemo(
     () => new Map<string, AdminClinic>(adminData.clinics.map((clinic) => [clinic.id, clinic])),
@@ -194,6 +204,42 @@ export default function AdminPanel() {
       {clinic.name}
     </option>
   ));
+
+  const loadSyncStatus = async () => {
+    try {
+      const data = await apiRequest<typeof syncStatus>('/sync/status');
+      setSyncStatus(data);
+    } catch (error) {
+      setSyncStatus((current) => ({
+        ...current,
+        online: false,
+        error: error instanceof Error ? error.message : 'Falha ao consultar sincronização.',
+      }));
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab !== 'sincronizacao') return;
+    void loadSyncStatus();
+    const timer = window.setInterval(() => void loadSyncStatus(), 30000);
+    return () => window.clearInterval(timer);
+  }, [activeTab]);
+
+  const runSyncNow = async () => {
+    setSyncLoading(true);
+    try {
+      await apiRequest('/sync/run', { method: 'POST' });
+      await loadSyncStatus();
+      setAdminSaveMessage('Sincronização concluída.');
+      showToast('Sincronização concluída.', 'success');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Falha ao sincronizar.';
+      setSyncStatus((current) => ({ ...current, error: message }));
+      showToast(message, 'error');
+    } finally {
+      setSyncLoading(false);
+    }
+  };
 
   const renderUsersTab = () => {
     const adminLogin = adminData.logins.find((login) => login.role === 'admin') ?? adminData.logins[0] ?? null;
@@ -1602,7 +1648,7 @@ export default function AdminPanel() {
     );
   };
 
-   const renderSummaryTab = () => {
+  const renderSummaryTab = () => {
     const planAssignments = adminData.plans.map((plan) => ({
       id: plan.id,
       name: plan.name,
@@ -1831,6 +1877,63 @@ export default function AdminPanel() {
     );
   };
 
+  const renderSyncTab = () => (
+    <div className="space-y-6">
+      <Card className="border-white/5 bg-white/[0.03]">
+        <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h3 className="text-lg font-bold text-zinc-50">Sincronização</h3>
+            <p className="mt-1 text-sm text-zinc-500">Controle administrativo do SQLite local e Supabase online.</p>
+          </div>
+          <Badge variant={syncStatus.online ? 'teal' : 'warning'} dot>
+            {syncStatus.online ? 'Online' : 'Offline'}
+          </Badge>
+        </div>
+
+        <div className="mt-6 grid gap-4 md:grid-cols-3">
+          <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-4">
+            <div className="flex items-center gap-2">
+              {syncStatus.online ? (
+                <Wifi className="h-4 w-4 text-emerald-400" />
+              ) : (
+                <WifiOff className="h-4 w-4 text-amber-400" />
+              )}
+              <p className="text-sm font-semibold text-zinc-100">{syncStatus.online ? 'Conectado' : 'Sem conexão'}</p>
+            </div>
+            <p className="mt-2 text-xs text-zinc-500">Status atual da nuvem Supabase.</p>
+          </div>
+
+          <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-4">
+            <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Último sync</p>
+            <p className="mt-2 text-sm font-semibold text-zinc-100">
+              {syncStatus.lastSyncAt ? new Date(syncStatus.lastSyncAt).toLocaleString('pt-BR') : 'Nunca'}
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-white/5 bg-white/[0.03] p-4">
+            <p className="text-xs uppercase tracking-[0.18em] text-zinc-500">Itens pendentes</p>
+            <p className="mt-2 text-2xl font-extrabold tracking-tight text-zinc-50">{syncStatus.pending}</p>
+          </div>
+        </div>
+
+        {syncStatus.error ? (
+          <div className="mt-5 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm font-medium text-amber-200">
+            {syncStatus.error}
+          </div>
+        ) : null}
+
+        <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+          <Button variant="secondary" icon={<RefreshCw size={15} />} onClick={() => void loadSyncStatus()}>
+            Atualizar status
+          </Button>
+          <Button icon={<RefreshCw size={15} className={syncLoading ? 'animate-spin' : ''} />} onClick={runSyncNow} loading={syncLoading}>
+            Sincronizar agora
+          </Button>
+        </div>
+      </Card>
+    </div>
+  );
+
   return (
     <div className="space-y-6 text-zinc-100">
       <section className="rounded-[28px] border border-white/5 bg-gradient-to-br from-white/8 via-white/4 to-transparent p-6 shadow-2xl shadow-black/30">
@@ -1907,6 +2010,12 @@ export default function AdminPanel() {
           icon={<Database size={16} />}
           label="Dados gerais"
         />
+        <TabButton
+          active={activeTab === 'sincronizacao'}
+          onClick={() => setActiveTab('sincronizacao')}
+          icon={<RefreshCw size={16} />}
+          label="Sincronização"
+        />
       </section>
 
       {activeTab === 'usuarios' ? renderUsersTab() : null}
@@ -1914,6 +2023,7 @@ export default function AdminPanel() {
       {activeTab === 'relatorios' ? renderReportsTab() : null}
       {activeTab === 'integracoes' ? renderIntegrationsTab() : null}
       {activeTab === 'dados-gerais' ? renderSummaryTab() : null}
+      {activeTab === 'sincronizacao' ? renderSyncTab() : null}
 
       {/* BotPlugin Balloon */}
       <div className="fixed bottom-6 right-6 z-[99] flex flex-col items-end">
